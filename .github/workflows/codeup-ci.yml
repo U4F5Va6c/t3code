@@ -55,3 +55,61 @@ jobs:
           vp run --parallel --concurrency-limit 4
           --filter '@t3tools/source-control-*' --filter @t3tools/contracts
           --filter @t3tools/shared --filter @t3tools/client-runtime test
+
+      - name: Test Codeup integration boundaries
+        run: >-
+          vp test run
+          apps/server/src/serverSettings.test.ts
+          apps/server/src/sourceControl/SourceControlDiscovery.test.ts
+          apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts
+          apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
+          apps/web/src/components/settings/ProviderSettingsForm.test.ts
+
+  macos-preview:
+    name: Codeup Preview DMG (${{ matrix.arch }})
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Package the PR commit itself; the artifact and review use the same SHA.
+          ref: ${{ github.event.pull_request.head.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Install Electron
+        run: vp run --filter @t3tools/desktop ensure:electron
+      - name: Build isolated acceptance app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: U4F5Va6c/t3code
+        run: |
+          version="0.0.0-codeup.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}"
+          vp run dist:desktop:artifact --platform mac --target dmg --arch '${{ matrix.arch }}' --build-version "$version" --output-dir artifacts --verbose
+          shasum -a 256 artifacts/*.dmg > artifacts/SHA256SUMS.txt
+          git rev-parse HEAD > artifacts/COMMIT.txt
+      - name: Upload DMG and checksum
+        uses: actions/upload-artifact@v7
+        with:
+          name: codeup-preview-macos-${{ matrix.arch }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            artifacts/*.dmg
+            artifacts/SHA256SUMS.txt
+            artifacts/COMMIT.txt
+          if-no-files-found: error
+          retention-days: 30

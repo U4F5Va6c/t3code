@@ -1564,6 +1564,59 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
 
+  it.effect("isolates, redacts, replaces, and removes Codeup organization tokens", () =>
+    Effect.gen(function* () {
+      const settings = yield* ServerSettingsModule.ServerSettingsService;
+      const secrets = yield* ServerSecretStore.ServerSecretStore;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const saved = yield* settings.updateSettings({
+        sourceControlHosts: {
+          codeup: { organizationTokens: { "org-a": "codeup-token-a", "org-b": "codeup-token-b" } },
+        },
+      });
+      const raw = yield* fs.readFileString(config.settingsPath);
+      assert.notInclude(raw, "codeup-token-a");
+      assert.notInclude(raw, "codeup-token-b");
+      const redacted = ServerSettingsModule.redactServerSettingsForClient(saved).sourceControlHosts;
+      assert.notInclude(JSON.stringify(redacted), "codeup-token-a");
+      assert.notInclude(JSON.stringify(redacted), "codeup-token-b");
+      yield* settings.updateSettings({ sourceControlHosts: redacted });
+      assert.deepEqual(
+        (yield* settings.getSettings).sourceControlHosts.codeup?.organizationTokens,
+        { "org-a": "codeup-token-a", "org-b": "codeup-token-b" },
+      );
+      yield* settings.updateSettings({
+        sourceControlHosts: {
+          codeup: { organizationTokens: { "org-b": "replacement-b" } },
+        },
+      });
+      const stored = (organizationId: string) =>
+        secrets
+          .get(
+            sourceControlHostSecretName({
+              kind: "codeup",
+              field: "organizationTokens",
+              serverHost: organizationId,
+            }),
+          )
+          .pipe(Effect.map(Option.map((bytes) => new TextDecoder().decode(bytes))));
+      assert.isTrue(Option.isNone(yield* stored("org-a")));
+      assert.deepEqual(yield* stored("org-b"), Option.some("replacement-b"));
+      yield* settings.updateSettings({
+        sourceControlHosts: { codeup: { organizationTokens: "" } },
+      });
+      assert.isTrue(Option.isNone(yield* stored("org-b")));
+      yield* settings.updateSettings({
+        sourceControlHosts: {
+          codeup: { organizationTokens: { "org-a": "reconnected" } },
+        },
+      });
+      assert.deepEqual(yield* stored("org-a"), Option.some("reconnected"));
+      assert.isTrue(Option.isNone(yield* stored("org-b")));
+    }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
+  );
+
   it.effect("keeps the retired keys for another load when a token cannot be copied", () => {
     const cause = new ServerSecretStore.SecretStoreReadError({
       resource: "bitbucket-access-token",

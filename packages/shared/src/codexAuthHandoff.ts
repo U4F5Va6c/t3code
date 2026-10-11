@@ -1,5 +1,6 @@
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "./codeupPreview.ts";
 import { providerAuthReturnUrl } from "./providerAuthReturnUrl.ts";
 
 export const CodexAuthHandoff = Schema.Struct({
@@ -84,18 +85,29 @@ export function codexCallbackUrl(value: string, redirectUri: string, state: stri
   return callback;
 }
 
-export function codexAuthHandoffUrl(input: CodexAuthHandoff, development = false) {
-  const url = new URL(`${development ? "t3code-dev" : "t3code"}://auth/codex`);
+export function codexAuthHandoffUrl(
+  input: CodexAuthHandoff,
+  development = false,
+  appVersion?: string,
+) {
+  const url = new URL(
+    `${isCodeupPreviewVersion(appVersion) ? CODEUP_PREVIEW.scheme : development ? "t3code-dev" : "t3code"}://auth/codex`,
+  );
   url.searchParams.set("request", encodeHandoff(input));
   return url.toString();
 }
 
-export function readCodexAuthHandoff(value: string, development: boolean) {
+export function readCodexAuthHandoff(value: string, development: boolean, appVersion?: string) {
   try {
     const url = new URL(value);
     if (
       value.length > 32_768 ||
-      url.protocol !== (development ? "t3code-dev:" : "t3code:") ||
+      url.protocol !==
+        (isCodeupPreviewVersion(appVersion)
+          ? `${CODEUP_PREVIEW.scheme}:`
+          : development
+            ? "t3code-dev:"
+            : "t3code:") ||
       url.host !== "auth" ||
       url.pathname !== "/codex" ||
       url.username ||

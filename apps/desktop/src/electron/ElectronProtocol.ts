@@ -1,3 +1,4 @@
+import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -16,16 +17,20 @@ export const DESKTOP_HOST = "app";
 const DESKTOP_PRODUCTION_SCHEME = "t3code";
 const DESKTOP_DEVELOPMENT_SCHEME = "t3code-dev";
 
-export function getDesktopScheme(isDevelopment: boolean): string {
-  return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;
+export function getDesktopScheme(isDevelopment: boolean, appVersion?: string): string {
+  return isCodeupPreviewVersion(appVersion)
+    ? CODEUP_PREVIEW.scheme
+    : isDevelopment
+      ? DESKTOP_DEVELOPMENT_SCHEME
+      : DESKTOP_PRODUCTION_SCHEME;
 }
 
-function getDesktopOrigin(isDevelopment: boolean): string {
-  return `${getDesktopScheme(isDevelopment)}://${DESKTOP_HOST}`;
+function getDesktopOrigin(isDevelopment: boolean, appVersion?: string): string {
+  return `${getDesktopScheme(isDevelopment, appVersion)}://${DESKTOP_HOST}`;
 }
 
-export function getDesktopUrl(isDevelopment: boolean): string {
-  return `${getDesktopOrigin(isDevelopment)}/`;
+export function getDesktopUrl(isDevelopment: boolean, appVersion?: string): string {
+  return `${getDesktopOrigin(isDevelopment, appVersion)}/`;
 }
 
 export class ElectronProtocolRegistrationError extends Schema.TaggedError<ElectronProtocolRegistrationError>()(
@@ -118,6 +123,17 @@ function withContentSecurityPolicy(response: Response, policy: string): Response
  */
 function registerDesktopSchemePrivilegesSync(): void {
   Electron.protocol.registerSchemesAsPrivileged([
+    {
+      scheme: CODEUP_PREVIEW.scheme,
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+        stream: true,
+        codeCache: true,
+      },
+    },
     {
       scheme: DESKTOP_PRODUCTION_SCHEME,
       privileges: {

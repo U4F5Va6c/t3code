@@ -53,6 +53,22 @@ describe("source control presentation", () => {
 });
 
 describe("detectSourceControlProviderFromRemoteUrl", () => {
+  it("recognizes Codeup Central Edition without claiming unknown deployments", () => {
+    for (const remote of [
+      "git@codeup.aliyun.com:org/team/repo.git",
+      "https://codeup.aliyun.com/org/repo.git",
+      "ssh://git@codeup.aliyun.com:22/org/repo.git",
+    ]) {
+      expect(detectSourceControlProviderFromRemoteUrl(remote)?.kind).toBe("codeup");
+    }
+    for (const remote of [
+      "https://codeup.internal/org/repo.git",
+      "https://codeup.aliyun.com.evil.test/org/repo.git",
+      "https://codeup.aliyun.com:8443/org/repo.git",
+    ]) {
+      expect(detectSourceControlProviderFromRemoteUrl(remote)?.kind).toBe("unknown");
+    }
+  });
   it("detects common source control hosts", () => {
     expect(detectSourceControlProviderFromRemoteUrl("git@github.com:owner/repo.git")?.kind).toBe(
       "github",

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 // @effect-diagnostics nodeBuiltinImport:off - Node's typed junction API avoids Windows symlink privileges while keeping the probe isolated.
 
 import * as NodeFSP from "node:fs/promises";
@@ -2701,7 +2702,11 @@ export function resolveDesktopUpdateChannel(version: string): "latest" | "nightl
 // install can be pointed at one of these releases, and the build itself
 // reports that no update feed is configured instead of polling.
 export function isDesktopPreviewVersion(version: string): boolean {
-  return /-pr\./.test(version) || /-preview\.\d{8}\.\d+$/.test(version);
+  return (
+    isCodeupPreviewVersion(version) ||
+    /-pr\./.test(version) ||
+    /-preview\.\d{8}\.\d+$/.test(version)
+  );
 }
 
 export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
@@ -2742,6 +2747,7 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 }
 
 export function resolveDesktopProductName(version: string): string {
+  if (isCodeupPreviewVersion(version)) return CODEUP_PREVIEW.productName;
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "T3 Code (Nightly)"
     : (desktopPackageJson.productName ?? "T3 Code");
@@ -2767,9 +2773,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   arch?: typeof BuildArch.Type,
 ) {
   const buildConfig: Record<string, unknown> = {
-    appId: DESKTOP_APP_ID,
+    appId: isCodeupPreviewVersion(version) ? CODEUP_PREVIEW.appId : DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    artifactName: isCodeupPreviewVersion(version)
+      ? "T3-Code-Codeup-Preview-${version}-${arch}.${ext}"
+      : "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
@@ -2825,28 +2833,32 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           "T3 Code captures the active window when you use the window capture shortcut.",
         // macOS lists an app under Default web browser only when it opens web
         // pages as documents as well as http and https links (see protocols).
-        CFBundleDocumentTypes: [
-          {
-            CFBundleTypeName: "Web page",
-            CFBundleTypeRole: "Viewer",
-            LSHandlerRank: "Alternate",
-            LSItemContentTypes: ["public.html", "public.xhtml"],
-          },
-        ],
+        CFBundleDocumentTypes: isCodeupPreviewVersion(version)
+          ? []
+          : [
+              {
+                CFBundleTypeName: "Web page",
+                CFBundleTypeRole: "Viewer",
+                LSHandlerRank: "Alternate",
+                LSItemContentTypes: ["public.html", "public.xhtml"],
+              },
+            ],
       },
-      protocols: [
-        {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
-        },
-        // Lets people choose T3 Code as their default web browser, which opens
-        // each link in a new thread's browser panel.
-        {
-          name: "Web site URL",
-          schemes: ["http", "https"],
-          role: "Viewer",
-        },
-      ],
+      protocols: isCodeupPreviewVersion(version)
+        ? [{ name: CODEUP_PREVIEW.productName, schemes: [CODEUP_PREVIEW.scheme] }]
+        : [
+            {
+              name: "T3 Code",
+              schemes: ["t3code", "t3code-dev"],
+            },
+            // Lets people choose T3 Code as their default web browser, which opens
+            // each link in a new thread's browser panel.
+            {
+              name: "Web site URL",
+              schemes: ["http", "https"],
+              role: "Viewer",
+            },
+          ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
       ...(macPasskeySigning
         ? {

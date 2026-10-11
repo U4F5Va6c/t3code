@@ -2107,6 +2107,33 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.notInclude(error.message, secret);
   });
 
+  it.effect("packages Codeup Preview with an isolated identity and no update feed", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.0.0-codeup.20261012.1",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      const mac = config.mac as Record<string, unknown>;
+      assert.equal(config.appId, "io.github.u4f5va6c.t3code.codeup-preview");
+      assert.equal(config.productName, "T3 Code (Codeup Preview)");
+      assert.equal(config.publish, undefined);
+      assert.deepStrictEqual(mac.protocols, [
+        { name: "T3 Code (Codeup Preview)", schemes: ["t3code-codeup-preview"] },
+      ]);
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({ env: { T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code" } }),
+        ),
+      ),
+    ),
+  );
+
   it.effect("adds passkey entitlements and both renderer protocols to signed macOS builds", () =>
     Effect.gen(function* () {
       const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {

@@ -27,6 +27,7 @@ import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import * as GitLabPullRequestCli from "@t3tools/source-control-gitlab/server/GitLabPullRequestCli";
 import * as ForgejoCli from "@t3tools/source-control-forgejo/server/ForgejoCli";
 import * as GitCafeApi from "@t3tools/source-control-gitcafe/server/GitCafeApi";
+import * as CodeupApi from "@t3tools/source-control-codeup/server/CodeupApi";
 import * as GitCafeCredentials from "@t3tools/source-control-gitcafe/server/GitCafeCredentials";
 import * as ForgejoSourceControlProvider from "@t3tools/source-control-forgejo/server/ForgejoSourceControlProvider";
 import * as ForgejoPullRequestProvider from "@t3tools/source-control-forgejo/server/ForgejoPullRequestProvider";
@@ -57,6 +58,7 @@ const layerSourceControlProviderRegistryTest = (input: {
         Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
         Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
         Layer.mock(GitCafeApi.GitCafeApi)({}),
+        Layer.mock(CodeupApi.CodeupApi)({ probe: Effect.succeed([]) }),
         Layer.mock(GitCafeCredentials.GitCafeCredentials)({
           cliEnv: () => Effect.succeed({}),
         }),
@@ -216,6 +218,12 @@ it.effect("reports implemented tools separately from locally available executabl
           auth: "unknown",
           account: Option.none(),
         },
+        {
+          kind: SourceControlProviderKind.make("codeup"),
+          status: "available",
+          auth: "unauthenticated",
+          account: Option.none(),
+        },
       ],
     );
     const bitbucket = result.sourceControlProviders.find((item) => item.kind === "bitbucket");
@@ -366,6 +374,12 @@ Logged in to gitlab.com as gitlab-user
           auth: "authenticated",
           account: Option.some("cafe-user"),
           detail: Option.none(),
+        },
+        {
+          kind: SourceControlProviderKind.make("codeup"),
+          auth: "unauthenticated",
+          account: Option.none(),
+          detail: Option.some("Add an organization token in Source Control settings."),
         },
       ],
     );

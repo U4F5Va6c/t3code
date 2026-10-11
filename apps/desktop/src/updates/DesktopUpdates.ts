@@ -1,3 +1,4 @@
+import { isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import {
   DESKTOP_UPDATE_RESTART_MARKER_FILE,
   DesktopUpdateChannelSchema,
@@ -358,7 +359,7 @@ export const make = Effect.gen(function* () {
         platform: environment.platform,
         appImage: Option.getOrUndefined(config.appImagePath),
         isDebPackage,
-        disabledByEnv: config.disableAutoUpdate,
+        disabledByEnv: config.disableAutoUpdate || isCodeupPreviewVersion(environment.appVersion),
         hasUpdateFeedConfig: hasFeedConfig,
       }),
     );

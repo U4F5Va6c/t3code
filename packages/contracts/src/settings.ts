@@ -539,7 +539,13 @@ export const makeBinaryPathSetting = (fallback: string) =>
     Schema.withDecodingDefault(Effect.succeed(fallback)),
   );
 
-export type ProviderSettingsFormControl = "text" | "password" | "textarea" | "switch" | "select";
+export type ProviderSettingsFormControl =
+  | "text"
+  | "password"
+  | "textarea"
+  | "switch"
+  | "select"
+  | "secret-map";
 
 export interface ProviderSettingsFormOption {
   readonly value: string;

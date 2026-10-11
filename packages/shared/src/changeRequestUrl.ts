@@ -48,6 +48,12 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
   if (url.protocol !== "https:" && url.protocol !== "http:") return null;
   const host = url.hostname.toLowerCase();
 
+  // Codeup Central Edition keeps the organization and any nested groups in the path.
+  if (host === "codeup.aliyun.com") {
+    if (url.protocol !== "https:" || url.port || url.username || url.password) return null;
+    const match = /^\/([^/]+(?:\/[^/]+)+)\/change\/(\d+)(?:\/|$)/u.exec(url.pathname);
+    return claim(host, match);
+  }
   // GitCafe, only on its own two hosts: /{owner}/{repo}/pulls/{n}
   if (host === "git.cafe" || host === "staging.git.cafe") {
     const match = /^\/([^/]+\/[^/]+)\/pulls\/(\d+)(?:\/|$)/u.exec(url.pathname);
@@ -98,7 +104,11 @@ export function changeRequestUrlFor(
   number: number,
   remoteUrl?: string,
 ): string | null {
+  if (kind == null && host === "codeup.aliyun.com")
+    return `https://${host}/${repository}/change/${number}`;
   switch (kind) {
+    case "codeup":
+      return host === "codeup.aliyun.com" ? `https://${host}/${repository}/change/${number}` : null;
     case "github":
       return `https://${host}/${repository}/pull/${number}`;
     case "gitcafe":
@@ -217,7 +227,7 @@ export function changeRequestRepositoryUrl(targetUrl: string): string | null {
   const url = new URL(targetUrl);
   const repositoryPath =
     /^(.*?)\/-\/merge_requests\/\d+(?:\/|$)/iu.exec(url.pathname)?.[1] ??
-    /^(.*?)(?:\/pulls?\/\d+|\/-\/merge_requests\/\d+|\/pull-requests\/\d+|\/pullrequest\/\d+)(?:\/|$)/iu.exec(
+    /^(.*?)(?:\/change\/\d+|\/pulls?\/\d+|\/-\/merge_requests\/\d+|\/pull-requests\/\d+|\/pullrequest\/\d+)(?:\/|$)/iu.exec(
       url.pathname,
     )?.[1];
   if (!repositoryPath) return null;
@@ -231,7 +241,7 @@ export function siblingPullRequestUrl(url: string, number: number): string | nul
   const reference = parseChangeRequestUrl(url);
   if (reference === null || !Number.isSafeInteger(number) || number < 1) return null;
   const sibling = new URL(url);
-  const route = /^\/(-\/merge_requests|pulls?|pull-requests|pullrequest)\/\d+(?:\/|$)/u.exec(
+  const route = /^\/(-\/merge_requests|pulls?|pull-requests|pullrequest|change)\/\d+(?:\/|$)/u.exec(
     sibling.pathname.slice(reference.repository.length + 1),
   )?.[1];
   if (route === undefined) return null;

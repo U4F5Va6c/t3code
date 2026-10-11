@@ -9,6 +9,7 @@
  */
 import * as AzureDevOps from "@t3tools/source-control-azure-devops/client/definition";
 import * as Bitbucket from "@t3tools/source-control-bitbucket/client/definition";
+import * as Codeup from "@t3tools/source-control-codeup/client/definition";
 import {
   makeSourceControlClientRegistry,
   readSourceControlHostSettings,
@@ -38,6 +39,7 @@ const BUILT_IN_SOURCE_CONTROL_CLIENTS = [
   Forgejo.definition,
   Bitbucket.definition,
   AzureDevOps.definition,
+  Codeup.definition,
 ];
 
 /** `definitions` lists the built-in hosts in that order, for pickers that offer every host. */

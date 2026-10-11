@@ -2,7 +2,7 @@
 
 本 Fork：<https://github.com/U4F5Va6c/t3code>。上游：<https://github.com/pingdotgg/t3code>。
 
-当前 `codeup-integration` 分支只建立维护约定，没有实现 Codeup / ProjeX Provider，也没有已验证的自有桌面或 iOS 安装包。设计基线为 2026-10-11 同步的上游 `ed0f7b90`，后续以实际合入提交为准。
+Codeup 原生适配基于 2026-10-11 同步的上游 `ed0f7b90`，覆盖本期 Source Control 与 MR 客户端验收；ProjeX 原生管理与 iOS 安装包暂缓。实际可验收提交和制品以 Fork PR 的 Codeup CI 为准。
 
 按用户 2026-10-10 的决定，本期保留 Web/桌面原生集成，并优先确保目标机器上的 Agent 通过 `codeup` Skill 和 CLI/MCP 操作平台工作项与仓库。iOS/手机端原生集成、个人签名、真机构建和移动发布暂缓，不作为开发、发布或结项前提。当前范围与验收以 [总需求 #1](https://github.com/U4F5Va6c/t3code/issues/1) 和 [客户端验收 #8](https://github.com/U4F5Va6c/t3code/issues/8) 为准。
 
@@ -66,6 +66,30 @@ vp run dev --home-dir "$PWD/.t3-codeup-dev"
 按根 AGENTS.md 运行改动范围内的 tests、lint、typecheck；全仓检查由配置好的 CI 承担。新增 Provider 应覆盖身份/URL、多页/限流、未知状态、写请求超时、MR SHA 与 CI 不匹配、多组织隔离；共享代码变化还需验证原有 GitHub 行为及受影响的移动类型/兼容路径。发布前验证 Web、桌面、目标机器上的 Agent 及远程连接；本期不要求移动原生功能或真机验收。
 
 Fork 只运行 `.github/workflows/codeup-ci.yml`：`codeup-integration` 的 PR 与推送执行上游同款 lint、typecheck 及 Source Control 相关包测试，使用 GitHub 托管 runner。上游工作流依赖 `blacksmith-*` runner 和发布 secrets，在 Fork 中全部手动禁用；默认 `GITHUB_TOKEN` 只读。web 与 server 大套件按根 AGENTS.md 在本地定向运行。不要导入上游生产 secrets。
+
+## macOS 隔离验收包
+
+指向 `codeup-integration` 的 PR 由 Codeup CI 构建 Apple Silicon（arm64）和 Intel（x64）DMG。
+在该 PR 的 Actions 运行中下载对应 `codeup-preview-macos-*` artifact，解压后核对
+`COMMIT.txt` 与 PR head、`SHA256SUMS.txt` 与 DMG。制品保留 30 天。
+
+安装为 **T3 Code (Codeup Preview).app**，可与原版同时存在：
+
+- Bundle ID：`io.github.u4f5va6c.t3code.codeup-preview`。
+- Chromium 配置：`~/Library/Application Support/t3code-codeup-preview`，不迁移原版设置。
+- 服务端数据：`~/.t3-codeup-preview`；忽略继承的 `T3CODE_HOME` 和固定端口配置。
+- 专用协议：`t3code-codeup-preview://`，不接管原版链接和默认浏览器。
+- 禁用自动更新；下一次验收下载新的 PR 制品。
+
+DMG 未签名、未公证。首次打开可能需要在 macOS **系统设置 → 隐私与安全性** 中允许打开；
+只对核对过提交和校验和的该应用放行，不要关闭全局 Gatekeeper。
+
+首次启动会建立空的隔离 environment。可添加独立测试 checkout，也可连接隔离远程服务；
+不要把原版数据库复制回去。Codeup 自动检测发生在实际执行 Git/API 的服务端机器上，
+因此 Mac 客户端连接 Linux environment 时无需在 Mac 重复配置公司 PAT。
+本机 Mac 需要能从应用进程找到凭据入口，见 [Codeup 认证](../user/source-control.md#codeup)。
+用专用测试仓库验收 MR 列表、详情、diff、评论与线程徽标，合并操作也只在测试 MR 上进行。
+卸载时退出预览应用，再按需移除它的两个独立数据目录；保留原版目录。
 
 ## 暂缓：在自己的 iPhone 安装
 

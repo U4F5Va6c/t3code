@@ -1,3 +1,4 @@
+import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import type {
   DesktopAppBranding,
   DesktopAppStageLabel,
@@ -112,9 +113,11 @@ export function resolveDesktopAppBranding(input: {
 }): DesktopAppBranding {
   const stageLabel = resolveDesktopAppStageLabel(input);
   return {
-    baseName: APP_BASE_NAME,
+    baseName: isCodeupPreviewVersion(input.appVersion) ? "T3 Code Codeup Preview" : APP_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    displayName: isCodeupPreviewVersion(input.appVersion)
+      ? CODEUP_PREVIEW.productName
+      : `${APP_BASE_NAME} (${stageLabel})`,
   };
 }
 
@@ -164,11 +167,15 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
-  const baseDir = resolveDesktopBaseDir({
-    homeDirectory,
-    joinPath: path.join,
-    t3Home: config.t3Home,
-  });
+  // Acceptance builds ignore an inherited production T3CODE_HOME.
+  const preview = isCodeupPreviewVersion(input.appVersion);
+  const baseDir = preview
+    ? path.join(homeDirectory, CODEUP_PREVIEW.home)
+    : resolveDesktopBaseDir({
+        homeDirectory,
+        joinPath: path.join,
+        t3Home: config.t3Home,
+      });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
   const serverRoot =
@@ -225,7 +232,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : path.join(input.appPath, "dev-app-update.yml"),
     devServerUrl,
     devRemoteT3ServerEntryPath: config.devRemoteT3ServerEntryPath,
-    configuredBackendPort: config.configuredBackendPort,
+    configuredBackendPort: preview ? Option.none() : config.configuredBackendPort,
     commitHashOverride: config.commitHashOverride,
     otlpTracesUrl: config.otlpTracesUrl,
     otlpMetricsUrl: config.otlpMetricsUrl,
@@ -235,9 +242,11 @@ const make = Effect.fn("desktop.environment.make")(function* (
     otlpProtocol: config.otlpProtocol,
     branding,
     displayName,
-    appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
-    ),
+    appUserModelId: preview
+      ? CODEUP_PREVIEW.appId
+      : Option.getOrElse(config.appUserModelIdOverride, () =>
+          isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
+        ),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
     linuxApplicationsDir,

@@ -13,5 +13,7 @@ describe("sourceControlClients", () => {
     const kindOf = (url: string) => sourceControlClients.findByChangeRequestUrl(url)?.kind;
     expect(kindOf("https://git.cafe/acme/web/pulls/7")).toBe("gitcafe");
     expect(kindOf("https://codeberg.org/acme/web/pulls/7")).toBe("forgejo");
+    expect(kindOf("https://codeup.aliyun.com/org/team/web/change/7")).toBe("codeup");
+    expect(kindOf("https://other.test/org/team/web/change/7")).toBeUndefined();
   });
 });

@@ -228,7 +228,11 @@ const make = Effect.gen(function* () {
     );
     const baseTip = yield* git.resolveCommit({ cwd: workspaceRoot, revision: baseRef });
     const fetchHead = (number: number, sha: string) =>
-      fetch([sha]).pipe(Effect.catch(() => fetch([`refs/pull/${number}/head`])));
+      fetch([sha]).pipe(
+        Effect.catch((cause) =>
+          detail.provider === "codeup" ? Effect.fail(cause) : fetch([`refs/pull/${number}/head`]),
+        ),
+      );
     yield* fetchHead(detail.number, headSha);
     // The other layers of a stack are context the model may read across a seam. A layer that
     // cannot be fetched is still named in the prompt, without a head to read.

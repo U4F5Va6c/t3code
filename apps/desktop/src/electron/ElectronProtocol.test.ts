@@ -8,7 +8,8 @@ import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import { beforeEach, vi } from "vite-plus/test";
 
-const { handleMock, netFetchMock, unhandleMock } = vi.hoisted(() => ({
+const { handleMock, netFetchMock, unhandleMock, registerSchemesMock } = vi.hoisted(() => ({
+  registerSchemesMock: vi.fn(),
   handleMock: vi.fn(),
   netFetchMock: vi.fn(),
   unhandleMock: vi.fn(),
@@ -16,7 +17,11 @@ const { handleMock, netFetchMock, unhandleMock } = vi.hoisted(() => ({
 
 vi.mock("electron", () => ({
   net: { fetch: netFetchMock },
-  protocol: { handle: handleMock, unhandle: unhandleMock },
+  protocol: {
+    handle: handleMock,
+    unhandle: unhandleMock,
+    registerSchemesAsPrivileged: registerSchemesMock,
+  },
 }));
 
 import * as ElectronProtocol from "./ElectronProtocol.ts";
@@ -29,6 +34,27 @@ describe("ElectronProtocol", () => {
     netFetchMock.mockReset();
     unhandleMock.mockReset();
   });
+
+  it.effect("registers the isolated preview origin before loading its renderer", () =>
+    Effect.sync(() => {
+      assert.equal(
+        ElectronProtocol.getDesktopUrl(false, "0.0.0-codeup.20261012.1"),
+        "t3code-codeup-preview://app/",
+      );
+      const registrations = registerSchemesMock.mock.calls.at(-1)?.[0];
+      assert.deepInclude(registrations, {
+        scheme: "t3code-codeup-preview",
+        privileges: {
+          standard: true,
+          secure: true,
+          supportFetchAPI: true,
+          corsEnabled: true,
+          stream: true,
+          codeCache: true,
+        },
+      });
+    }).pipe(Effect.provide(ElectronProtocol.layerSchemePrivileges)),
+  );
 
   it.effect("serves the bundled client from disk without a backend", () =>
     Effect.gen(function* () {

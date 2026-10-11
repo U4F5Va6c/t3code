@@ -25,6 +25,7 @@ export type SettingsFormDefinition = Pick<ProviderClientDefinition, "settingsSch
   readonly driverKind?: ProviderClientDefinition["driverKind"];
 };
 import { SettingsRow } from "./settingsLayout";
+import { SecretMapField } from "./SecretMapField";
 
 export interface ProviderSettingsFieldModel {
   readonly key: string;
@@ -381,6 +382,20 @@ function ProviderSettingsFieldRow({
   onChange,
 }: ProviderSettingsFieldRowProps) {
   const inputId = `${idPrefix}-${field.key}`;
+  if (field.control === "secret-map") {
+    const config =
+      value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    return (
+      <SecretMapField
+        id={inputId}
+        label={field.label}
+        description={field.description}
+        keyPlaceholder={field.placeholder}
+        value={config[field.key]}
+        onChange={(next) => onChange({ ...config, [field.key]: next })}
+      />
+    );
+  }
   const descriptionClassName =
     variant === "dialog"
       ? "text-2xs text-muted-foreground"

@@ -1,6 +1,6 @@
 # Source control
 
-T3 Code integrates with GitHub, GitLab, Forgejo, Gitea, Bitbucket, Azure DevOps, and GitCafe to clone
+T3 Code integrates with GitHub, GitLab, Forgejo, Gitea, Bitbucket, Azure DevOps, GitCafe, and Codeup to clone
 and publish repositories, create pull requests, and review changes.
 
 ## Review turn changes
@@ -61,6 +61,45 @@ Install [GitLab CLI](https://gitlab.com/gitlab-org/cli), then sign in:
 ```bash
 glab auth login
 ```
+
+### Codeup
+
+Codeup Central Edition supports cloning, private repository publishing, merge request creation,
+checkout, search, previews, diffs, comments, reviews, reviewer requests, and close/reopen/merge.
+Linked merge requests use the same thread badges and review page as other source control hosts.
+Checks refer to the current Codeup patch set; unavailable or stale checks do not count as passing.
+
+T3 Code automatically uses authentication available on the machine running the environment:
+
+1. An organization token saved in **Settings → Source Control → Codeup**.
+2. `ALIBABA_CLOUD_YUNXIAO_ACCESS_TOKEN` with the matching
+   `ALIBABA_CLOUD_YUNXIAO_ORGANIZATION_ID` in the server's environment.
+3. A working `aliyun-devops` command on PATH, or the official `aliyun devops` CLI.
+
+If you already use a credential wrapper, expose it as an executable named `aliyun-devops` that
+accepts the official CLI subcommand and arguments. Shell aliases are not executables. For example,
+a 1Password setup can provide this wrapper using its existing account and env template:
+
+```sh
+#!/bin/sh
+exec op run --env-file=/absolute/path/to/your-codeup.env -- aliyun devops "$@"
+```
+
+Keep the template's existing organization and secret references; do not copy the token into the
+script. Put the executable on the server's PATH and choose **Rescan**. A locked credential manager
+may require unlocking on that machine. The official CLI alone does not imply a saved PAT login.
+Alternatively, add your organization ID and token in Settings; saved tokens cannot be viewed again.
+Repeat for each organization. Removing a saved token restores local automatic detection.
+
+Use the complete repository path beginning with the organization ID, including any nested groups,
+or its `codeup.aliyun.com` SSH/HTTPS URL. Git authentication remains separate and is required for
+cloning, pushing, checkout, and expanding full file context. Publishing currently creates private
+repositories in the organization root.
+
+New line-level review drafts, reactions, labels, stacks, merge queues, draft/ready transitions,
+and branch update actions are not available. Existing line discussions can be read, replied to,
+and resolved. Cross-repository diffs and non-Central deployments are not part of this preview's
+acceptance scope. ProjeX, Testhub, and standalone Flow management remain agent/CLI workflows.
 
 ### Bitbucket
 

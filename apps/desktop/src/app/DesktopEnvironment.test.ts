@@ -39,6 +39,20 @@ const makeEnvironment = (
 ) => DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(layerEnvironment(overrides, env)));
 
 describe("DesktopEnvironment", () => {
+  it.effect("isolates Codeup acceptance builds from an inherited production runtime", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        { appVersion: "0.0.0-codeup.20261012.1", isPackaged: true },
+        { T3CODE_HOME: "/Users/alice/.t3", T3CODE_PORT: "3773" },
+      );
+      assert.equal(environment.baseDir, "/Users/alice/.t3-codeup-preview");
+      assert.equal(environment.stateDir, "/Users/alice/.t3-codeup-preview/userdata");
+      assert.equal(environment.displayName, "T3 Code (Codeup Preview)");
+      assert.equal(environment.appUserModelId, "io.github.u4f5va6c.t3code.codeup-preview");
+      assert.isTrue(Option.isNone(environment.configuredBackendPort));
+    }),
+  );
+
   it.effect("derives state paths and development identity inside Effect", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(

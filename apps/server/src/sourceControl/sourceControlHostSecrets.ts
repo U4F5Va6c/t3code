@@ -9,6 +9,7 @@
  */
 import * as AzureDevOps from "@t3tools/source-control-azure-devops/client/definition";
 import * as Bitbucket from "@t3tools/source-control-bitbucket/client/definition";
+import * as Codeup from "@t3tools/source-control-codeup/client/definition";
 import {
   secretSourceControlHostSettingsFields,
   type SourceControlClientDefinition,
@@ -25,6 +26,7 @@ const definitions: ReadonlyArray<SourceControlClientDefinition> = [
   Bitbucket.definition,
   Forgejo.definition,
   GitCafe.definition,
+  Codeup.definition,
 ];
 
 /** Secret field names per host kind; a host with none is absent. */

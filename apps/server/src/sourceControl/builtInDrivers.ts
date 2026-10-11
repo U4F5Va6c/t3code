@@ -13,6 +13,8 @@ import * as AzureDevOpsDriver from "@t3tools/source-control-azure-devops/server/
 import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 import * as BitbucketPullRequestApi from "@t3tools/source-control-bitbucket/server/BitbucketPullRequestApi";
 import * as BitbucketDriver from "@t3tools/source-control-bitbucket/server/driver";
+import * as CodeupApi from "@t3tools/source-control-codeup/server/CodeupApi";
+import * as CodeupDriver from "@t3tools/source-control-codeup/server/driver";
 import * as ForgejoCli from "@t3tools/source-control-forgejo/server/ForgejoCli";
 import * as ForgejoDriver from "@t3tools/source-control-forgejo/server/driver";
 import * as GitCafeApi from "@t3tools/source-control-gitcafe/server/GitCafeApi";
@@ -36,6 +38,7 @@ const drivers = [
   BitbucketDriver.driver,
   ForgejoDriver.driver,
   GitCafeDriver.driver,
+  CodeupDriver.driver,
 ];
 
 /** Every service a built-in driver's `make` needs; the server's layers must provide them all. */
@@ -55,6 +58,7 @@ export const layer = Layer.mergeAll(
   AzureDevOpsPullRequestCli.layer.pipe(Layer.provideMerge(AzureDevOpsCli.layer)),
   BitbucketPullRequestApi.layer.pipe(Layer.provideMerge(BitbucketApi.layer)),
   ForgejoCli.layer,
+  CodeupApi.layer,
   GitCafeApi.layer.pipe(Layer.provideMerge(GitCafeCredentials.layer)),
   GitLabPullRequestCli.layer.pipe(Layer.provideMerge(GitLabCli.layer)),
 ).pipe(Layer.provideMerge(ServerSourceControlHost.layer));

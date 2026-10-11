@@ -1,3 +1,4 @@
+import { isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -83,7 +84,7 @@ const make = Effect.gen(function* () {
 
   const load = Effect.fn("desktop.legacyLocalStorage.load")(function* (userDataPath: string) {
     // Development already shares its profile between versions.
-    if (environment.isDevelopment) return;
+    if (environment.isDevelopment || isCodeupPreviewVersion(environment.appVersion)) return;
     const marker = path.join(userDataPath, MARKER_FILE_NAME);
     if (yield* fs.exists(marker).pipe(Effect.orElseSucceed(() => true))) return;
     yield* Ref.set(markerPath, Option.some(marker));

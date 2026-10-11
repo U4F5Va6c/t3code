@@ -221,6 +221,14 @@ export function detectSourceControlProviderFromRemoteUrl(
   }
   const hostname = parseHostName(host);
 
+  if (host === "codeup.aliyun.com") {
+    return {
+      kind: SourceControlProviderKind.make("codeup"),
+      name: "Codeup",
+      baseUrl: "https://codeup.aliyun.com",
+    };
+  }
+
   if (isGitCafeHost(hostname)) {
     return {
       kind: SourceControlProviderKind.make("gitcafe"),
