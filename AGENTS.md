@@ -162,3 +162,13 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## Agent skills
+
+### Issue tracker
+
+本 Fork 的开发追踪在 GitHub Issues（`U4F5Va6c/t3code`），见 `docs/agents/issue-tracker.md`。Fork 维护、上游同步、CI 与 Codeup 接入边界见 `docs/operations/codeup-fork.md`。
+
+### Domain docs
+
+single-context，见 `docs/agents/domain.md`。
