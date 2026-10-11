@@ -208,6 +208,32 @@ export const summary = (repository: string, mr: typeof MergeRequest.Type) => ({
   labels: [],
   reviewRequestLogins: mr.reviewers.filter((u) => !u.hasReviewed).map((u) => u.userId),
 });
+export function reviewActivity(reviewers: ReadonlyArray<typeof User.Type>): PullRequestComment[] {
+  return reviewers.flatMap((reviewer) => {
+    const reviewState =
+      reviewer.reviewOpinionStatus === "PASS"
+        ? "APPROVED"
+        : reviewer.reviewOpinionStatus === "NOT_PASS"
+          ? "CHANGES_REQUESTED"
+          : null;
+    return reviewer.hasReviewed && reviewState && reviewer.reviewTime
+      ? [
+          {
+            id: `review:${reviewer.userId}:${reviewer.reviewTime}`,
+            kind: "review" as const,
+            author: actor(reviewer),
+            body: "",
+            createdAt: reviewer.reviewTime,
+            url: null,
+            path: null,
+            reviewState,
+            viewerCanEdit: false,
+          },
+        ]
+      : [];
+  });
+}
+
 export function patch(compare: typeof Compare.Type) {
   let truncated = false;
   const sections = compare.diffs.map((f) => {

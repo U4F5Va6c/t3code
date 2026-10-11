@@ -471,7 +471,7 @@ export function PullRequestActorLabel({
     <span className={cn("flex min-w-0 items-center", variant === "label" && "gap-1.5")}>
       <PullRequestActorAvatar actor={actor} />
       <span className={variant === "label" ? "truncate font-medium text-foreground" : "sr-only"}>
-        {login}
+        {profileUrl === null ? actor?.name || login : login}
       </span>
     </span>
   );

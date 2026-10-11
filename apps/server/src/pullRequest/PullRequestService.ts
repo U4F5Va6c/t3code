@@ -1174,7 +1174,7 @@ export const make = Effect.gen(function* () {
       (filters.excludedLabels === undefined || !filters.excludedLabels.some(holds)) &&
       (filters.author === undefined ||
         item.author?.login.toLowerCase() ===
-          resolvePullRequestAuthorFilter(filters.author, viewer).toLowerCase())
+          resolvePullRequestAuthorFilter(filters.author, item.viewer ?? viewer).toLowerCase())
     );
   };
 
@@ -1184,8 +1184,9 @@ export const make = Effect.gen(function* () {
     readonly viewer: string;
     readonly observedAt: number;
   }): PullRequestListEntry => {
-    const viewer = input.viewer.toLowerCase();
+    const viewer = (input.item.viewer ?? input.viewer).toLowerCase();
     return {
+      ...(input.item.viewer === undefined ? {} : { viewer: input.item.viewer }),
       ...(input.item.stack === undefined ? {} : { stack: input.item.stack }),
       provider: input.project.api.kind,
       host: input.project.host,
@@ -1793,7 +1794,11 @@ export const make = Effect.gen(function* () {
             checks: changeRequest.checks,
             mergeCapabilities: changeRequest.mergeCapabilities,
             viewerPermissions: changeRequest.viewerPermissions,
-            ...(viewer === null || viewer.trim().length === 0 ? {} : { viewer }),
+            ...(changeRequest.viewer
+              ? { viewer: changeRequest.viewer }
+              : viewer === null || viewer.trim().length === 0
+                ? {}
+                : { viewer }),
             ...(changeRequest.baseComparison === undefined
               ? {}
               : { baseComparison: changeRequest.baseComparison }),
@@ -2287,6 +2292,7 @@ export const make = Effect.gen(function* () {
                 host: project.host,
                 number: input.number,
                 verdict: input.verdict,
+                ...(input.expectedHeadSha ? { expectedHeadSha: input.expectedHeadSha } : {}),
                 body: input.body,
                 comments: input.comments,
               })

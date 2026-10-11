@@ -127,6 +127,9 @@ export const make = Effect.gen(function* () {
     listChangeRequests: Effect.fn("CodeupSourceControlProvider.listChangeRequests")(
       function* (input) {
         const repo = yield* target(input);
+        const repository = yield* api
+          .getRepository(repo.repository)
+          .pipe(Effect.mapError(mapError(input.cwd, "listChangeRequests")));
         const result: ChangeRequest[] = [];
         for (let page = 1; page <= 20; page++) {
           const rows = yield* read(
@@ -135,7 +138,7 @@ export const make = Effect.gen(function* () {
               operation: "ListChangeRequests",
               organizationId: repo.organizationId,
               query: {
-                projectIds: repo.repository,
+                projectIds: repository.id,
                 page,
                 perPage: 100,
                 orderBy: "updated_at",
@@ -148,7 +151,10 @@ export const make = Effect.gen(function* () {
             Json.MergeRequests,
           );
           for (const row of rows)
-            if (row.sourceBranch === SourceControlProvider.sourceBranch(input))
+            if (
+              row.targetProjectId === repository.id &&
+              row.sourceBranch === SourceControlProvider.sourceBranch(input)
+            )
               result.push(
                 convert(repo.repository, {
                   ...row,

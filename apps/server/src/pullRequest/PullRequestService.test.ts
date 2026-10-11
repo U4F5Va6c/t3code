@@ -7479,3 +7479,54 @@ it.effect.each([
       assert.deepStrictEqual(calls, [expected]);
     }),
 );
+
+it.effect("uses repository-scoped accounts for author filters, review requests and detail", () =>
+  Effect.gen(function* () {
+    const projects = [
+      project({ id: "p1", title: "A", workspaceRoot: "/a", repository: "org-a/repo" }),
+      project({ id: "p2", title: "B", workspaceRoot: "/b", repository: "org-b/repo" }),
+    ];
+    const viewerFor = (repository: string) => (repository === "org-a/repo" ? "alice" : "bob");
+    const service = yield* makeService({
+      projects,
+      providers: [
+        fakeProvider(SourceControlProviderKind.make("github"), {
+          getViewer: () => Effect.succeed("alice"),
+          listChangeRequests: ({ repository }) => {
+            const viewer = viewerFor(repository);
+            return Effect.succeed({
+              items: [
+                {
+                  ...changeRequest(1, "2026-07-02T00:00:00Z"),
+                  viewer,
+                  author: { login: viewer, name: null, avatarUrl: null },
+                },
+                {
+                  ...changeRequest(2, "2026-07-02T00:00:00Z"),
+                  viewer,
+                  reviewRequestLogins: [viewer],
+                },
+              ],
+              truncated: false,
+              continues: true,
+            });
+          },
+          getChangeRequest: ({ repository }) =>
+            Effect.succeed({ ...hostedChangeRequest("body"), viewer: viewerFor(repository) }),
+        }),
+      ],
+    });
+    const all = yield* service.list({ state: "open" });
+    assert.strictEqual(all.entries.filter((entry) => entry.viewerReviewRequested).length, 2);
+    const authored = yield* service.list({ state: "open", filters: { author: "me" } });
+    assert.deepStrictEqual(authored.entries.map((entry) => entry.viewer).toSorted(), [
+      "alice",
+      "bob",
+    ]);
+    assert.strictEqual(
+      (yield* service.detail({ projectId: "p2" as ProjectId, repository: "org-b/repo", number: 1 }))
+        .viewer,
+      "bob",
+    );
+  }),
+);

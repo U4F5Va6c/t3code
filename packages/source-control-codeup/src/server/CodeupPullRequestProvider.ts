@@ -5,6 +5,7 @@ import {
 import {
   PullRequestProviderError,
   type ProviderRepositoryRef,
+  type ProviderChangeRequest,
   type PullRequestProviderApi,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
@@ -241,8 +242,13 @@ export const make = Effect.gen(function* () {
     }),
     listChangeRequests: Effect.fn("CodeupPullRequestProvider.listChangeRequests")(
       function* (input) {
+        const repository = yield* api
+          .getRepository(input.repository)
+          .pipe(Effect.mapError(mapError("listChangeRequests")));
+        // T3's shared viewer cache is host-scoped; Codeup credentials are organization-scoped.
+        const viewer = yield* read(input, { operation: "GetUserByToken" }, Json.Viewer);
         const offset = input.cursor?.delivered ?? 0;
-        const items: Array<ReturnType<typeof Json.summary>> = [];
+        const items: Array<ProviderChangeRequest> = [];
         let consumed = 0,
           more = true;
         // A fixed page size keeps continuation stable when the client changes its slice size.
@@ -252,7 +258,7 @@ export const make = Effect.gen(function* () {
             {
               operation: "ListChangeRequests",
               query: {
-                projectIds: input.repository,
+                projectIds: repository.id,
                 page,
                 perPage: 100,
                 orderBy: "updated_at",
@@ -262,19 +268,25 @@ export const make = Effect.gen(function* () {
                   : { state: input.state === "open" ? "opened" : input.state }),
                 ...(input.query ? { search: input.query } : {}),
                 ...(input.involvement === "authored"
-                  ? { authorIds: input.viewer }
+                  ? { authorIds: viewer.id }
                   : input.involvement === "reviewing"
-                    ? { reviewerIds: input.viewer }
+                    ? { reviewerIds: viewer.id }
                     : {}),
               },
             },
             Json.MergeRequests,
           );
+          if (rows.some((row) => row.targetProjectId !== repository.id))
+            return yield* failure(
+              "listChangeRequests",
+              "Codeup returned merge requests for another repository.",
+            );
           const start = page === Math.floor(offset / 100) + 1 ? offset % 100 : 0;
           const slice = rows.slice(start, start + input.limit - items.length);
           for (const row of slice)
-            items.push(
-              Json.summary(input.repository, {
+            items.push({
+              viewer: viewer.id,
+              ...Json.summary(input.repository, {
                 ...row,
                 status: row.state,
                 createTime: row.createdAt,
@@ -286,7 +298,7 @@ export const make = Effect.gen(function* () {
                       ? "NO_CONFLICT"
                       : null,
               }),
-            );
+            });
           consumed += slice.length;
           more = start + slice.length < rows.length || rows.length === 100;
           if (!slice.length) break;
@@ -308,9 +320,14 @@ export const make = Effect.gen(function* () {
     getChangeRequestPreview: (input) =>
       mr(input).pipe(Effect.map((value) => Json.summary(input.repository, value))),
     getChangeRequest: Effect.fn("CodeupPullRequestProvider.getChangeRequest")(function* (input) {
-      const [value, compared, viewerPermissions] = yield* Effect.all(
-        [mr(input), comparison(input), permissions(input)],
-        { concurrency: 3 },
+      const [value, compared, viewerPermissions, viewer] = yield* Effect.all(
+        [
+          mr(input),
+          comparison(input),
+          permissions(input),
+          read(input, { operation: "GetUserByToken" }, Json.Viewer),
+        ],
+        { concurrency: 4 },
       );
       const checkList = yield* checks(input, compared);
       return {
@@ -321,6 +338,7 @@ export const make = Effect.gen(function* () {
         reviewers: value.reviewers.map((u) => Json.actor(u)!),
         checks: checkList,
         viewerPermissions,
+        viewer: viewer.id,
         mergeCapabilities: { merge: true, squash: true, rebase: true },
         ...(value.behind == null
           ? {}
@@ -360,6 +378,7 @@ export const make = Effect.gen(function* () {
         const count = value.totalCommentCount ?? activity.comments.length;
         return {
           ...activity,
+          comments: [...activity.comments, ...Json.reviewActivity(value.reviewers)],
           commentCount: count,
           commentsTruncated: count > activity.comments.length,
           reviewThreadsTruncated: count > activity.comments.length,
@@ -552,6 +571,12 @@ export const make = Effect.gen(function* () {
         if (input.body.trim()) yield* comment(input);
         return;
       }
+      const versions = yield* patches(input);
+      if (!input.expectedHeadSha || input.expectedHeadSha !== versions.source.commitId)
+        return yield* failure(
+          "review",
+          "The merge request changed since it was displayed. Refresh and review the current diff before submitting.",
+        );
       yield* write(input, {
         operation: "ReviewChangeRequest",
         body: {
@@ -559,6 +584,12 @@ export const make = Effect.gen(function* () {
           reviewComment: input.body,
         },
       });
+      const after = yield* patches(input);
+      if (after.source.commitId !== versions.source.commitId)
+        return yield* failure(
+          "review",
+          "Codeup accepted the review while the head changed. Check the review on Codeup before continuing.",
+        );
     }),
     listReviewerCandidates: Effect.fn("CodeupPullRequestProvider.listReviewerCandidates")(
       function* (input) {

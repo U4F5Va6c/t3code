@@ -523,6 +523,8 @@ export const PullRequestStackMembership = Schema.Struct({
 export type PullRequestStackMembership = typeof PullRequestStackMembership.Type;
 
 export const PullRequestListEntry = Schema.Struct({
+  /** Overrides the host identity for providers with repository-scoped accounts. */
+  viewer: Schema.optional(TrimmedNonEmptyString),
   stack: Schema.optional(PullRequestStackMembership),
   provider: SourceControlProviderKind,
   /**
@@ -1213,6 +1215,8 @@ export type PullRequestReviewCommentDraft = typeof PullRequestReviewCommentDraft
  */
 export const PullRequestSubmitReviewInput = Schema.Struct({
   ...PullRequestRef.fields,
+  /** The revision displayed while composing the review; hosts may require it for verdicts. */
+  expectedHeadSha: Schema.optional(TrimmedNonEmptyString),
   verdict: PullRequestReviewVerdict,
   /** The review's own words. May be empty, which is how an approval with no remarks is sent. */
   body: Schema.String.check(Schema.isMaxLength(65_536)),

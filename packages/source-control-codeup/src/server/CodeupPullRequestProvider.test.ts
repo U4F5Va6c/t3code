@@ -53,6 +53,8 @@ function harness(
   let status = mr.status;
   const http = HttpClient.make((request) => {
     const url = new URL(request.url);
+    const repository =
+      request.headers["x-yunxiao-token"] === "other-token" ? "other/team/repo" : input.repository;
     requests.push({
       method: request.method,
       url: request.url,
@@ -81,6 +83,13 @@ function harness(
         commit_statuses: [],
       };
     else if (url.pathname.endsWith("/comments/list")) data = [];
+    else if (url.pathname === "/oapi/v1/platform/user")
+      data = {
+        id:
+          request.headers["x-yunxiao-token"] === "other-token"
+            ? "other-viewer"
+            : "organization-viewer",
+      };
     else if (url.pathname.endsWith("/changeRequests/7"))
       data = { ...mr, status, allRequirementsPass: options.gate ?? true };
     else if (url.pathname.endsWith("/changeRequests")) {
@@ -95,10 +104,10 @@ function harness(
     } else
       data = {
         id: 12,
-        pathWithNamespace: input.repository,
-        webUrl: `https://${input.host}/${input.repository}`,
-        sshUrlToRepo: `git@${input.host}:${input.repository}.git`,
-        httpUrlToRepo: `https://${input.host}/${input.repository}.git`,
+        pathWithNamespace: repository,
+        webUrl: `https://${input.host}/${repository}`,
+        sshUrlToRepo: `git@${input.host}:${repository}.git`,
+        httpUrlToRepo: `https://${input.host}/${repository}.git`,
         accessLevel: String(options.access ?? 40),
       };
     return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(data)));
@@ -109,7 +118,9 @@ function harness(
       TestHost.layer({
         settings: {
           ...DEFAULT_SERVER_SETTINGS,
-          sourceControlHosts: { codeup: { organizationTokens: { org: "test-token" } } },
+          sourceControlHosts: {
+            codeup: { organizationTokens: { org: "test-token", other: "other-token" } },
+          },
         },
       }),
     ),
@@ -118,6 +129,79 @@ function harness(
 }
 
 describe("Codeup MR integration", () => {
+  it.effect("scopes list filtering to the repository ID and its organization's viewer", () => {
+    const { layer, requests } = harness();
+    return Effect.gen(function* () {
+      const p = yield* Provider.make;
+      const listed = yield* p.listChangeRequests({
+        ...input,
+        state: "open",
+        involvement: "authored",
+        viewer: "another-organization-user",
+        limit: 1,
+      });
+      const url = new URL(requests.find((r) => r.url.includes("/changeRequests?"))!.url);
+      expect(url.searchParams.get("projectIds")).toBe("12");
+      expect(url.searchParams.get("authorIds")).toBe("organization-viewer");
+      expect(listed.items[0]?.viewer).toBe("organization-viewer");
+      const other = yield* p.listChangeRequests({
+        ...input,
+        repository: "other/team/repo",
+        state: "open",
+        involvement: "all",
+        viewer: "organization-viewer",
+        limit: 1,
+      });
+      expect(other.items[0]?.viewer).toBe("other-viewer");
+    }).pipe(Effect.provide(layer));
+  });
+  it.effect(
+    "rejects a review of an older head without writing, and refuses an unrelated commit diff",
+    () => {
+      const { layer, requests } = harness();
+      return Effect.gen(function* () {
+        const p = yield* Provider.make;
+        expect(
+          (yield* p
+            .submitReview({
+              ...input,
+              verdict: "approve",
+              body: "",
+              comments: [],
+              expectedHeadSha: "old",
+            })
+            .pipe(Effect.flip)).detail,
+        ).toContain("changed");
+        expect(
+          (yield* p.getDiff({ ...input, commit: "unrelated" }).pipe(Effect.flip)).detail,
+        ).toContain("no longer part");
+        expect(requests.every((r) => r.method === "GET")).toBe(true);
+        yield* p.submitReview({
+          ...input,
+          verdict: "approve",
+          body: "",
+          comments: [],
+          expectedHeadSha: "head",
+        });
+        expect(requests.filter((r) => r.method === "POST")).toHaveLength(1);
+      }).pipe(Effect.provide(layer));
+    },
+  );
+  it("maps actual review verdicts, including reviews without text", () => {
+    expect(
+      Json.reviewActivity([
+        {
+          ...user,
+          hasReviewed: true,
+          reviewOpinionStatus: "PASS",
+          reviewTime: "2026-10-12T00:00:00Z",
+        },
+      ])[0],
+    ).toMatchObject({ kind: "review", reviewState: "APPROVED", body: "" });
+    expect(
+      Json.reviewActivity([{ ...user, hasReviewed: false, reviewOpinionStatus: "PASS" }]),
+    ).toEqual([]);
+  });
   it.effect("reads a cheap hover preview, then the current diff, check and details", () => {
     const { layer, requests } = harness();
     return Effect.gen(function* () {
@@ -126,6 +210,7 @@ describe("Codeup MR integration", () => {
       expect(requests).toHaveLength(1);
       const detail = yield* p.getChangeRequest(input);
       expect(detail.headSha).toBe("head");
+      expect(detail.viewer).toBe("organization-viewer");
       expect(detail.additions).toBe(1);
       expect(detail.changedFiles).toBe(1);
       expect(detail.checks[0]).toMatchObject({ name: "Build", status: "success", required: true });

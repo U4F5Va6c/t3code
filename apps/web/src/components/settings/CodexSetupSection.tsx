@@ -1,3 +1,4 @@
+import { APP_VERSION } from "~/branding";
 import { AuthProvidersManageScope } from "@t3tools/contracts";
 import { useEnvironmentScope } from "../../state/session";
 import {
@@ -619,6 +620,7 @@ function ManagedCodexSetup({
             flowId: auth.flowId,
           },
           import.meta.env.DEV,
+          APP_VERSION,
         )
       : null;
   const waitingControl = (

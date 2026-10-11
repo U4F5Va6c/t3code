@@ -85,6 +85,8 @@ export interface PullRequestProviderFailure {
 
 /** A change request as the provider sees it, before the service attaches project context. */
 export interface ProviderChangeRequest {
+  /** Repository-scoped identity where accounts are not shared across the host. */
+  readonly viewer?: string;
   readonly stack?: PullRequestStackMembership;
   readonly number: number;
   readonly title: string;
@@ -633,6 +635,7 @@ export interface PullRequestProviderApi {
     input: ProviderRepositoryRef & {
       readonly number: number;
       readonly verdict: PullRequestReviewVerdict;
+      readonly expectedHeadSha?: string;
       readonly body: string;
       readonly comments: ReadonlyArray<PullRequestReviewCommentDraft>;
     },

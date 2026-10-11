@@ -59,6 +59,8 @@ jobs:
       - name: Test Codeup integration boundaries
         run: >-
           vp test run
+          apps/server/src/pullRequest/PullRequestService.test.ts
+          apps/web/src/components/pullRequest/pullRequestList.logic.test.ts
           apps/server/src/serverSettings.test.ts
           apps/server/src/sourceControl/SourceControlDiscovery.test.ts
           apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts

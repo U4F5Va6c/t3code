@@ -322,6 +322,37 @@ describe("pull request involvement filtering", () => {
     ).toEqual([1]);
   });
 
+  it("uses each repository's account on a shared host", () => {
+    const mixed = [
+      entry({
+        number: 1,
+        host: "codeup.aliyun.com",
+        repository: "org-a/repo",
+        viewer: "alice",
+        author: { login: "alice", name: null, avatarUrl: null },
+      }),
+      entry({
+        number: 2,
+        host: "codeup.aliyun.com",
+        repository: "org-b/repo",
+        viewer: "bob",
+        author: { login: "bob", name: null, avatarUrl: null },
+      }),
+      entry({
+        number: 3,
+        host: "codeup.aliyun.com",
+        repository: "org-b/repo",
+        viewer: "bob",
+        author: { login: "alice", name: null, avatarUrl: null },
+      }),
+    ];
+    expect(
+      filterPullRequestsByInvolvement(mixed, { "codeup.aliyun.com": "alice" }, "authored").map(
+        (item) => item.number,
+      ),
+    ).toEqual([1, 2]);
+  });
+
   it("returns nothing for Authored when the viewer is unknown", () => {
     expect(filterPullRequestsByInvolvement(entries, NO_VIEWERS, "authored")).toEqual([]);
   });

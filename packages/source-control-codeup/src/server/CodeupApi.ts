@@ -205,9 +205,8 @@ const make = Effect.gen(function* () {
       path = path.replace(`{${key}}`, encodeURIComponent(String(value)));
     if (path.includes("{"))
       return yield* new CodeupApiError({ reason: "invalid-repository", status: null });
-    const query = new URLSearchParams(
-      Object.entries(input.query ?? {}).map(([key, value]) => [key, String(value)] as const),
-    );
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(input.query ?? {})) query.set(key, String(value));
     const httpRequest = HttpClientRequest.make(spec.method)(
       `https://${CODEUP_API_HOST}/oapi/v1${path}${query.size ? `?${query}` : ""}`,
     ).pipe(HttpClientRequest.setHeaders({ "x-yunxiao-token": token, accept: "application/json" }));

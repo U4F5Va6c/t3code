@@ -62,7 +62,7 @@ Install [GitLab CLI](https://gitlab.com/gitlab-org/cli), then sign in:
 glab auth login
 ```
 
-### Codeup
+#### Codeup
 
 Codeup Central Edition supports cloning, private repository publishing, merge request creation,
 checkout, search, previews, diffs, comments, reviews, reviewer requests, and close/reopen/merge.
@@ -98,7 +98,9 @@ repositories in the organization root.
 
 New line-level review drafts, reactions, labels, stacks, merge queues, draft/ready transitions,
 and branch update actions are not available. Existing line discussions can be read, replied to,
-and resolved. Cross-repository diffs and non-Central deployments are not part of this preview's
+and resolved. Approval and request-changes verify the reviewed head before sending and read back
+the current version afterward. Codeup has no atomic expected-head parameter, so refresh if the
+branch changes during a review or merge. Cross-repository diffs and non-Central deployments are not part of this preview's
 acceptance scope. ProjeX, Testhub, and standalone Flow management remain agent/CLI workflows.
 
 ### Bitbucket
