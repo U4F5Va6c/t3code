@@ -1,4 +1,4 @@
-# Domain docs
+# 领域文档
 
 single-context：仓库根 `GLOSSARY.md` 与 `docs/adr/`。
 

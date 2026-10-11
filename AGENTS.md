@@ -165,10 +165,10 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 
 ## Agent skills
 
-### Issue tracker
+### 工作项追踪
 
 本 Fork 的开发追踪在 GitHub Issues（`U4F5Va6c/t3code`），见 `docs/agents/issue-tracker.md`。Fork 维护、上游同步、CI 与 Codeup 接入边界见 `docs/operations/codeup-fork.md`。
 
-### Domain docs
+### 领域文档
 
 single-context，见 `docs/agents/domain.md`。
