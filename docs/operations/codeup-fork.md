@@ -29,7 +29,7 @@ git merge --no-ff upstream/main
 
 `YYYYMMDD` 换成本次日期，分支已存在时选新名称。第一次发布集成分支前不执行其 `git pull`。发生冲突时逐项处理；放弃本轮同步用 `git merge --abort`。不要用 `reset --hard` 或强推覆盖共享分支。
 
-同步分支完成相关测试、类型检查和手动验收后，再通过 Fork 内部 PR 合入 `codeup-integration`；能快进时快进，历史分叉时用 Merge Commit，不 Squash。合入后运行 `gh api repos/U4F5Va6c/t3code/actions/workflows --paginate -q '.workflows[]|select(.state=="active")|.path'`，除 `codeup-ci.yml` 外的新增上游工作流立即禁用。PR 目标不要误选上游仓库。只有明确要贡献上游时才另开上游 PR。
+同步分支完成相关测试、类型检查和手动验收后，再通过 Fork 内部 PR 以 Merge Commit 方式合入 `codeup-integration`，不 Squash。该分支受保护：必须经 PR 且 Codeup CI 通过，管理员同样不能直接推送或强推。合入后运行 `gh api repos/U4F5Va6c/t3code/actions/workflows --paginate -q '.workflows[]|select(.state=="active")|.path'`，除 `codeup-ci.yml` 外的新增上游工作流立即禁用。PR 目标不要误选上游仓库。只有明确要贡献上游时才另开上游 PR。
 
 ## 独立 Source Control 的边界
 
@@ -61,7 +61,7 @@ Codeup git host 与 API host 分离；凭据、缓存和资源身份包含组织
 vp run dev --home-dir "$PWD/.t3-codeup-dev"
 ```
 
-该目录不应提交；首次使用前加入本机 `.git/info/exclude`。不要连接生产 `~/.t3/userdata`，不要覆盖现有服务或复用生产端口。需要 tailnet 分享时依照 [开发指南](development.md) 的 `--share` 流程，不改官方服务的网络映射。
+该目录不应提交；首次使用前加入本机 `.git/info/exclude`。使用 CodeGraph 时在本机根目录放 `codegraph.json`（`{ "exclude": [".repos/"] }`，同样加入 exclude）：`.repos/` 的 vendored 参考仓库会让索引内存超限中断。不要连接生产 `~/.t3/userdata`，不要覆盖现有服务或复用生产端口。需要 tailnet 分享时依照 [开发指南](development.md) 的 `--share` 流程，不改官方服务的网络映射。
 
 按根 AGENTS.md 运行改动范围内的 tests、lint、typecheck；全仓检查由配置好的 CI 承担。新增 Provider 应覆盖身份/URL、多页/限流、未知状态、写请求超时、MR SHA 与 CI 不匹配、多组织隔离；共享代码变化还需验证原有 GitHub 行为及受影响的移动类型/兼容路径。发布前验证 Web、桌面、目标机器上的 Agent 及远程连接；本期不要求移动原生功能或真机验收。
 
