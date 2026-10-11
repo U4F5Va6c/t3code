@@ -4,12 +4,14 @@
 
 当前 `codeup-integration` 分支只建立维护约定，没有实现 Codeup / ProjeX Provider，也没有已验证的自有桌面或 iOS 安装包。设计基线为上游 `a7223f3969428170cc13bd7859aa59098b2f94b1`，后续以实际合入提交为准。
 
+按用户 2026-10-10 的决定，本期保留 Web/桌面原生集成，并优先确保目标机器上的 Agent 通过 `codeup` Skill 和 CLI/MCP 操作平台工作项与仓库。iOS/手机端原生集成、个人签名、真机构建和移动发布暂缓，不作为开发、发布或结项前提。当前范围与验收以 [总需求 #1](https://github.com/U4F5Va6c/t3code/issues/1) 和 [客户端验收 #8](https://github.com/U4F5Va6c/t3code/issues/8) 为准。
+
 ## 分支与上游同步
 
 - `upstream` 指向 pingdotgg/t3code，只拉取上游变更。
 - `origin` 指向个人 Fork，默认推送到这里。
 - `main` 保持上游主线，不放定制提交；`codeup-integration` 是长期集成分支。
-- 功能分支从 `codeup-integration` 创建。Codeup Provider、ProjeX、移动签名与发布分别保持清楚的提交边界。
+- 功能分支从 `codeup-integration` 创建。Codeup Provider、ProjeX 与发布分别保持清楚的提交边界。
 
 每周或遇到需要的上游修复时同步。先确保工作区干净，记录当前 Fork 提交，再执行：
 
@@ -33,13 +35,15 @@ git merge --no-ff upstream/main
 
 Codeup 实现放在新 `packages/source-control-codeup`，复用现有 SourceControlDriver 和 PullRequestProvider 契约。GitHub Provider 内部实现保持不动。设置中使用独立的 Codeup 入口和凭据绑定，仓库 remote 识别后交给对应 driver。
 
-现有注册表、provider 类型、URL 解析、设置页面、图标、Web/mobile 的穷尽映射需要最小加法修改；当前架构不是动态插件系统，因此不能承诺新增目录就自动获得所有 UI 能力。
+现有注册表、provider 类型、URL 解析、设置页面、图标及 Web 入口需要最小加法修改；共享类型影响 mobile 时只做必要的兼容处理，不新增手机原生云效入口。当前架构不是动态插件系统，因此不能承诺新增目录就自动获得所有 UI 能力。
 
 ProjeX 是独立工作项领域：需求/缺陷/任务不伪装成 PR。工作项可关联多个仓库、MR 和线程，状态以 ProjeX 回读为准。未来 UI 与 Agent MCP 共用服务器服务及权限检查。
 
 Codeup git host 与 API host 分离；凭据、缓存和资源身份包含组织范围。只为验证过的 diff、评审、评论、合并和检查声明 capability。GitHub 专属 stack、merge queue、跨环境凭据路由等不会自动适用于 Codeup。
 
 所有 Git 和云效调用在 server/environment 执行；iPhone 不运行 aliyun CLI，也不直接保存公司 PAT。
+
+目标执行环境必须具备对应版本的 Skill、CLI/MCP、API 凭据和 Git 鉴权。现有手机 App 可作为可选远程对话入口，但其与 Fork 服务端的兼容性尚未验证，不作为本期验收门槛。
 
 ## 开发与验证
 
@@ -53,11 +57,13 @@ vp run dev --home-dir "$PWD/.t3-codeup-dev"
 
 该目录不应提交；首次使用前加入本机 `.git/info/exclude`。不要连接生产 `~/.t3/userdata`，不要覆盖现有服务或复用生产端口。需要 tailnet 分享时依照 [开发指南](development.md) 的 `--share` 流程，不改官方服务的网络映射。
 
-按根 AGENTS.md 运行改动范围内的 tests、lint、typecheck；全仓检查由配置好的 CI 承担。新增 Provider 应覆盖身份/URL、多页/限流、未知状态、写请求超时、MR SHA 与 CI 不匹配、多组织隔离；共享代码变化还需验证原有 GitHub 行为。发布前验证 Web、桌面、移动及远程连接。
+按根 AGENTS.md 运行改动范围内的 tests、lint、typecheck；全仓检查由配置好的 CI 承担。新增 Provider 应覆盖身份/URL、多页/限流、未知状态、写请求超时、MR SHA 与 CI 不匹配、多组织隔离；共享代码变化还需验证原有 GitHub 行为及受影响的移动类型/兼容路径。发布前验证 Web、桌面、目标机器上的 Agent 及远程连接；本期不要求移动原生功能或真机验收。
 
 Fork 初始关闭 GitHub Actions，避免直接启用上游的发布、EAS、包仓库等流程。准备 CI 时先审查 `.github/workflows`：启用所需验证工作流，禁用或替换发布工作流及 secrets，再开启仓库 Actions。不要导入上游生产 secrets。
 
-## 在自己的 iPhone 安装
+## 暂缓：在自己的 iPhone 安装
+
+以下内容仅保留为未来恢复时的参考，本期不执行 Xcode、签名、移动 OTA 或真机构建准备。恢复前重新核对届时的上游配置和 Apple/Expo 要求。
 
 免费 Apple Account 可以使用 Xcode Personal Team 本地签名，不必为了第一次试用购买会员。免费描述文件 7 天到期，需要重新构建/安装；不能指望一次安装永久可用。付费 Developer Program 提供更多签名能力及 TestFlight 等分发途径；EAS 真机云构建通常也需要付费账号。先本地跑通，再决定是否付费。
 
@@ -91,10 +97,10 @@ Release 包内嵌 JS，不需要 Metro 常驻；`ios:dev` 是迭代调试方式�
 
 ## 发布、更新与回退
 
-1. 从验证过的同一个集成提交构建 server、桌面和 mobile，记录上游 SHA、Fork SHA、工具链与构建结果；版本标签使用 `codeup-vX.Y.Z`。
+1. 从验证过的同一个集成提交构建 server、Web 和桌面，记录上游 SHA、Fork SHA、Skill 版本、工具链与构建结果；版本标签使用 `codeup-vX.Y.Z`。本期不构建移动制品。
 2. 桌面设置自己的 app ID、名称、数据目录、签名及更新来源。开发阶段可设置 `T3CODE_DISABLE_AUTO_UPDATE=true`；正式制品将 `T3CODE_DESKTOP_UPDATE_REPOSITORY` 指向自己的发布仓库。不要让 Fork 更新器覆盖官方版本或反过来覆盖 Fork。
 3. 先在独立 environment 验证认证、仓库识别、工作项关联、MR 评审与 CI，再升级日常环境。升级前停止该 environment 并备份其数据；数据库迁移后不能假设旧程序能直接读新数据库。
-4. 免费签名通过 Xcode 重装更新，保持自己的 bundle ID；付费后可选择设备签名或自己的 TestFlight。原生依赖、entitlements 或 runtimeVersion 变化必须重建安装包，不能只推 JS OTA。
+4. 验证目标环境中的 Codex/Claude Code 能通过所配置的 Skill 与 CLI/MCP 完成平台操作和回读，远程断线后可以恢复；不以手机安装自签 App 为前提。
 5. 回退使用上一套配对构建和必要的数据备份。Git 提交回退不能代替数据回退。
 
 官方商店客户端不保证理解 Fork 新增的 provider 类型；原生 Codeup 页面需使用匹配的 Fork 客户端。Skill 与 CLI/MCP 工作流可先独立使用。
