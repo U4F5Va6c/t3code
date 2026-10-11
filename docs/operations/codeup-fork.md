@@ -2,7 +2,7 @@
 
 本 Fork：<https://github.com/U4F5Va6c/t3code>。上游：<https://github.com/pingdotgg/t3code>。
 
-当前 `codeup-integration` 分支只建立维护约定，没有实现 Codeup / ProjeX Provider，也没有已验证的自有桌面或 iOS 安装包。设计基线为上游 `a7223f3969428170cc13bd7859aa59098b2f94b1`，后续以实际合入提交为准。
+当前 `codeup-integration` 分支只建立维护约定，没有实现 Codeup / ProjeX Provider，也没有已验证的自有桌面或 iOS 安装包。设计基线为 2026-10-11 同步的上游 `ed0f7b90`，后续以实际合入提交为准。
 
 按用户 2026-10-10 的决定，本期保留 Web/桌面原生集成，并优先确保目标机器上的 Agent 通过 `codeup` Skill 和 CLI/MCP 操作平台工作项与仓库。iOS/手机端原生集成、个人签名、真机构建和移动发布暂缓，不作为开发、发布或结项前提。当前范围与验收以 [总需求 #1](https://github.com/U4F5Va6c/t3code/issues/1) 和 [客户端验收 #8](https://github.com/U4F5Va6c/t3code/issues/8) 为准。
 
@@ -29,13 +29,19 @@ git merge --no-ff upstream/main
 
 `YYYYMMDD` 换成本次日期，分支已存在时选新名称。第一次发布集成分支前不执行其 `git pull`。发生冲突时逐项处理；放弃本轮同步用 `git merge --abort`。不要用 `reset --hard` 或强推覆盖共享分支。
 
-同步分支完成相关测试、类型检查和手动验收后，再通过 Fork 内部 PR 合入 `codeup-integration`。PR 目标不要误选上游仓库。只有明确要贡献上游时才另开上游 PR。
+同步分支完成相关测试、类型检查和手动验收后，再通过 Fork 内部 PR 合入 `codeup-integration`；能快进时快进，历史分叉时用 Merge Commit，不 Squash。合入后运行 `gh api repos/U4F5Va6c/t3code/actions/workflows --paginate -q '.workflows[]|select(.state=="active")|.path'`，除 `codeup-ci.yml` 外的新增上游工作流立即禁用。PR 目标不要误选上游仓库。只有明确要贡献上游时才另开上游 PR。
 
 ## 独立 Source Control 的边界
 
 Codeup 实现放在新 `packages/source-control-codeup`，复用现有 SourceControlDriver 和 PullRequestProvider 契约。GitHub Provider 内部实现保持不动。设置中使用独立的 Codeup 入口和凭据绑定，仓库 remote 识别后交给对应 driver。
 
-现有注册表、provider 类型、URL 解析、设置页面、图标及 Web 入口需要最小加法修改；共享类型影响 mobile 时只做必要的兼容处理，不新增手机原生云效入口。当前架构不是动态插件系统，因此不能承诺新增目录就自动获得所有 UI 能力。
+上游已把 provider kind 改为开放 slug，每个 host 包自带 `src/client/definition.ts`（展示、URL、能力、设置）和 `src/server/` driver。最近的完整参照是 `packages/source-control-gitcafe`（REST API + token 设置）；CLI 封装型参照是 `source-control-gitlab`。`source-control-azure-devops` 只覆盖 PR，不含工作项，不作为 ProjeX 参照。新 host 的注册点用以下命令列出，逐一照做：
+
+```sh
+git grep -il gitcafe -- apps packages ':!packages/source-control-gitcafe' ':!*.test.*'
+```
+
+共享类型影响 mobile 时只做必要的兼容处理，不新增手机原生云效入口。
 
 ProjeX 是独立工作项领域：需求/缺陷/任务不伪装成 PR。工作项可关联多个仓库、MR 和线程，状态以 ProjeX 回读为准。未来 UI 与 Agent MCP 共用服务器服务及权限检查。
 
@@ -47,7 +53,7 @@ Codeup git host 与 API host 分离；凭据、缓存和资源身份包含组织
 
 ## 开发与验证
 
-按根 README 安装 Vite+；当前 package.json 要求 Node `^24.13.1`，包管理器为 `pnpm@11.10.0`。使用匹配版本后在根目录执行 `vp i`。
+按根 README 安装 Vite+；当前 package.json 要求 Node `^24.13.1`，包管理器为 `pnpm@11.10.0`。本机默认 Node 不满足时用版本管理器按命令切换（如 `fnm exec --using=24 vp i`），不改全局默认。
 
 开发使用独立状态：
 
@@ -59,7 +65,7 @@ vp run dev --home-dir "$PWD/.t3-codeup-dev"
 
 按根 AGENTS.md 运行改动范围内的 tests、lint、typecheck；全仓检查由配置好的 CI 承担。新增 Provider 应覆盖身份/URL、多页/限流、未知状态、写请求超时、MR SHA 与 CI 不匹配、多组织隔离；共享代码变化还需验证原有 GitHub 行为及受影响的移动类型/兼容路径。发布前验证 Web、桌面、目标机器上的 Agent 及远程连接；本期不要求移动原生功能或真机验收。
 
-Fork 初始关闭 GitHub Actions，避免直接启用上游的发布、EAS、包仓库等流程。准备 CI 时先审查 `.github/workflows`：启用所需验证工作流，禁用或替换发布工作流及 secrets，再开启仓库 Actions。不要导入上游生产 secrets。
+Fork 只运行 `.github/workflows/codeup-ci.yml`：`codeup-integration` 的 PR 与推送执行上游同款 lint、typecheck 及 Source Control 相关包测试，使用 GitHub 托管 runner。上游工作流依赖 `blacksmith-*` runner 和发布 secrets，在 Fork 中全部手动禁用；默认 `GITHUB_TOKEN` 只读。web 与 server 大套件按根 AGENTS.md 在本地定向运行。不要导入上游生产 secrets。
 
 ## 暂缓：在自己的 iPhone 安装
 
