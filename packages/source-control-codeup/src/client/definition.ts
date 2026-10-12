@@ -1,5 +1,6 @@
 import {
   makeProviderSettingsSchema,
+  secretSetting,
   SourceControlProviderKind,
   TrimmedString,
 } from "@t3tools/contracts";
@@ -23,12 +24,13 @@ const KIND = SourceControlProviderKind.make("codeup");
 export const settings = makeProviderSettingsSchema({
   // This slot is only for Central Edition. A future deployment must not reuse these tokens.
   organizationTokens: Schema.Record(Schema.String, TrimmedString).pipe(
+    secretSetting,
     Schema.withDecodingDefault(Effect.succeed({})),
     Schema.annotateKey({
       title: "Organization tokens",
       description:
         "Optional override. Uses the local aliyun-devops login or ALIBABA_CLOUD_YUNXIAO_ACCESS_TOKEN and ORGANIZATION_ID automatically. Add an organization token if this environment has no existing login. Git credentials are separate.",
-      providerSettingsForm: { control: "secret-map", secret: true, placeholder: "Organization ID" },
+      providerSettingsForm: { control: "secret-map", placeholder: "Organization ID" },
     }),
   ),
 });

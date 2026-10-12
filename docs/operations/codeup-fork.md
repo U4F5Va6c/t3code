@@ -2,7 +2,7 @@
 
 本 Fork：<https://github.com/U4F5Va6c/t3code>。上游：<https://github.com/pingdotgg/t3code>。
 
-Codeup 原生适配基于 2026-10-11 同步的上游 `ed0f7b90`，覆盖本期 Source Control 与 MR 客户端验收；ProjeX 原生管理与 iOS 安装包暂缓。实际可验收提交和制品以 Fork PR 的 Codeup CI 为准。
+Codeup 原生适配已同步至 2026-10-12 的上游 `48595c78`，覆盖本期 Source Control 与 MR 客户端验收；ProjeX 原生管理与 iOS 安装包暂缓。实际可验收提交和制品以 Fork PR 的 Codeup CI 为准。
 
 按用户 2026-10-10 的决定，本期保留 Web/桌面原生集成，并优先确保目标机器上的 Agent 通过 `codeup` Skill 和 CLI/MCP 操作平台工作项与仓库。iOS/手机端原生集成、个人签名、真机构建和移动发布暂缓，不作为开发、发布或结项前提。当前范围与验收以 [总需求 #1](https://github.com/U4F5Va6c/t3code/issues/1) 和 [客户端验收 #8](https://github.com/U4F5Va6c/t3code/issues/8) 为准。
 
