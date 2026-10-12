@@ -128,6 +128,17 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
 });
 
 it.layer(NodeServices.layer)("server self update", (it) => {
+  it.effect("reports the failed preparation step without restarting the server", () =>
+    Effect.gen(function* () {
+      const { selfUpdate, order } = yield* makeHarness();
+      const failure = yield* selfUpdate.update({ targetVersion: "1.1.1" }).pipe(Effect.flip);
+      expect(failure.reason).toContain(
+        "finding t3-1.1.1-linux-x64.tar.gz in the t3 release checksums",
+      );
+      expect(order).toEqual([]);
+    }),
+  );
+
   it.effect("rejects a release from another distribution before staging or restarting", () =>
     Effect.gen(function* () {
       const { selfUpdate, order } = yield* makeHarness();
