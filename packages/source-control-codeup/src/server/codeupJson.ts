@@ -103,6 +103,7 @@ const commentFields = {
   comment_time: Schema.String,
   last_edit_time: text,
   comment_type: Schema.String,
+  state: text,
   filePath: text,
   line_number: count,
   resolved: bool,
@@ -341,14 +342,26 @@ export function activity(items: typeof Comments.Type, sourcePatch: string, targe
     path: c.filePath ?? null,
     reviewState: null,
   });
+  const isPublished = (c: typeof Comment.Type) => !c.is_deleted && c.state !== "DRAFT";
   for (const root of items) {
-    const all = [root, ...(root.child_comments_list ?? [])].filter((c) => !c.is_deleted);
+    if (root.state === "DRAFT") continue;
+    const all = [root, ...(root.child_comments_list ?? [])].filter(isPublished);
+    const resolution =
+      isPublished(root) &&
+      root.comment_type === "GLOBAL_COMMENT" &&
+      typeof root.resolved === "boolean"
+        ? {
+            threadId: root.comment_biz_id,
+            isResolved: root.resolved,
+            isOutdated: root.out_dated === true,
+          }
+        : undefined;
     for (const c of all)
       if (!seen.has(c.comment_biz_id)) {
-        comments.push(convert(c));
+        comments.push({ ...convert(c), ...(resolution ? { resolution } : {}) });
         seen.add(c.comment_biz_id);
       }
-    if (root.comment_type !== "INLINE_COMMENT" || !root.filePath) continue;
+    if (!isPublished(root) || root.comment_type !== "INLINE_COMMENT" || !root.filePath) continue;
     const located = root.location;
     const anchor = located?.located_patch_set_biz_id ?? root.related_patchset?.patchSetBizId;
     const side = anchor === targetPatch ? "left" : "right";

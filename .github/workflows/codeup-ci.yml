@@ -61,6 +61,8 @@ jobs:
           vp test run
           apps/server/src/pullRequest/PullRequestService.test.ts
           apps/web/src/components/pullRequest/pullRequestList.logic.test.ts
+          apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
+          apps/web/src/components/pullRequest/pullRequestEditing.logic.test.ts
           apps/server/src/serverSettings.test.ts
           apps/server/src/sourceControl/SourceControlDiscovery.test.ts
           apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts

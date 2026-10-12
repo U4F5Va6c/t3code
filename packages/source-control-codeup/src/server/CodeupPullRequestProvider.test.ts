@@ -47,10 +47,17 @@ const compare = {
   ],
 };
 function harness(
-  options: { gate?: boolean; access?: number; checks?: unknown; failWrite?: boolean } = {},
+  options: {
+    gate?: boolean;
+    access?: number;
+    checks?: unknown;
+    failWrite?: boolean;
+    comments?: typeof Json.Comments.Type;
+  } = {},
 ) {
   const requests: Array<{ method: string; url: string; body: unknown }> = [];
   let status = mr.status;
+  let comments = options.comments ?? [];
   const http = HttpClient.make((request) => {
     const url = new URL(request.url);
     const repository =
@@ -64,7 +71,8 @@ function harness(
           : null,
     });
     let data: unknown;
-    if (request.method !== "GET") {
+    if (url.pathname.endsWith("/comments/list")) data = comments;
+    else if (request.method !== "GET") {
       if (options.failWrite)
         return Effect.succeed(
           HttpClientResponse.fromWeb(request, new Response("{}", { status: 503 })),
@@ -72,6 +80,14 @@ function harness(
       if (url.pathname.endsWith("/merge")) status = "MERGED";
       if (url.pathname.endsWith("/close")) status = "CLOSED";
       if (url.pathname.endsWith("/reopen")) status = "UNDER_REVIEW";
+      if (request.method === "PUT" && url.pathname.includes("/comments/")) {
+        const body = requests.at(-1)?.body as { resolved: boolean };
+        comments = comments.map((comment) =>
+          url.pathname.endsWith(`/comments/${comment.comment_biz_id}`)
+            ? { ...comment, resolved: body.resolved }
+            : comment,
+        );
+      }
       data = { result: true };
     } else if (url.pathname.endsWith("/diffs/patches")) data = patchSets;
     else if (url.pathname.endsWith("/compares")) data = compare;
@@ -82,7 +98,6 @@ function harness(
         check_list: [{ task_name: "Build", state: "PASS", required: true, invalid: false }],
         commit_statuses: [],
       };
-    else if (url.pathname.endsWith("/comments/list")) data = [];
     else if (url.pathname === "/oapi/v1/platform/user")
       data = {
         id:
@@ -129,6 +144,49 @@ function harness(
 }
 
 describe("Codeup MR integration", () => {
+  it.effect("resolves and reopens a general conversation with fresh root and reply states", () => {
+    const root = {
+      comment_biz_id: "global-root",
+      content: "Check this",
+      author: user,
+      comment_time: mr.createTime,
+      comment_type: "GLOBAL_COMMENT",
+      resolved: false,
+    };
+    const { layer, requests } = harness({
+      comments: [{ ...root, child_comments_list: [{ ...root, comment_biz_id: "reply" }] }],
+    });
+    return Effect.gen(function* () {
+      const p = yield* Provider.make;
+      for (const resolved of [true, false]) {
+        yield* p.setThreadResolution({ ...input, threadId: "global-root", resolved });
+        const activity = yield* p.getChangeRequestActivity(input);
+        expect(activity.comments.map((comment) => comment.resolution)).toEqual([
+          { threadId: "global-root", isResolved: resolved, isOutdated: false },
+          { threadId: "global-root", isResolved: resolved, isOutdated: false },
+        ]);
+        expect(activity.comments.map((comment) => comment.body)).toEqual([
+          "Check this",
+          "Check this",
+        ]);
+        expect(activity.reviewThreads).toEqual([]);
+      }
+      expect(
+        requests.filter((request) => request.method === "PUT").map((request) => request.body),
+      ).toEqual([{ resolved: true }, { resolved: false }]);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("does not retry an uncertain resolution write", () => {
+    const { layer, requests } = harness({ failWrite: true });
+    return Effect.gen(function* () {
+      const p = yield* Provider.make;
+      yield* p
+        .setThreadResolution({ ...input, threadId: "global-root", resolved: true })
+        .pipe(Effect.flip);
+      expect(requests.filter((request) => request.method === "PUT")).toHaveLength(1);
+    }).pipe(Effect.provide(layer));
+  });
   it.effect("scopes list filtering to the repository ID and its organization's viewer", () => {
     const { layer, requests } = harness();
     return Effect.gen(function* () {

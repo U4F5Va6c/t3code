@@ -414,6 +414,31 @@ export function resolveThreadPanelPullRequestAction(
     : null;
 }
 
+/** Resolving a reply always targets the conversation's root, including remarks off the diff. */
+export function pullRequestCommentResolution(
+  comment: PullRequestComment,
+  thread?: PullRequestReviewThread,
+): PullRequestComment["resolution"] {
+  return thread
+    ? {
+        threadId: thread.id,
+        isResolved: thread.isResolved,
+        isOutdated: thread.isOutdated,
+        ...(thread.canResolve === undefined ? {} : { canResolve: thread.canResolve }),
+      }
+    : comment.resolution;
+}
+
+export function isFinishedPullRequestComment(
+  comment: PullRequestComment,
+  thread?: PullRequestReviewThread,
+): boolean {
+  return (
+    pullRequestCommentResolution(comment, thread)?.isResolved === true ||
+    pullRequestReviewOutcome(comment.reviewState) === "dismissed"
+  );
+}
+
 /** Chronological ascending, oldest to newest — reversed for the "newest" reading order. */
 export function orderPullRequestComments<T extends { readonly createdAt: string }>(
   comments: ReadonlyArray<T>,

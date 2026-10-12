@@ -98,7 +98,9 @@ repositories in the organization root.
 
 New line-level review drafts, reactions, labels, stacks, merge queues, draft/ready transitions,
 and branch update actions are not available. Existing line discussions can be read, replied to,
-and resolved. Approval and request-changes verify the reviewed head before sending and read back
+and resolved. General comments also show their resolution status and can be resolved or reopened
+when your account permits it. Resolved comments are hidden by default; enable **Resolved or dismissed**
+in the comments filter to view or reopen them. Approval and request-changes verify the reviewed head before sending and read back
 the current version afterward. Codeup has no atomic expected-head parameter, so refresh if the
 branch changes during a review or merge. Cross-repository diffs and non-Central deployments are not part of this preview's
 acceptance scope. ProjeX, Testhub, and standalone Flow management remain agent/CLI workflows.

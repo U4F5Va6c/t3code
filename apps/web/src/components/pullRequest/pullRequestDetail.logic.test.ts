@@ -34,6 +34,8 @@ import {
   handoffReviewComments,
   stripPullRequestHandoffReferences,
   isPullRequestVerdictStale,
+  isFinishedPullRequestComment,
+  pullRequestCommentResolution,
   isStackedPullRequestBase,
   loadingPullRequestCheckoutCommand,
   pullRequestPanelContext,
@@ -61,6 +63,68 @@ import {
   writePullRequestDetailSnapshot,
 } from "./pullRequestDetail.logic";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
+
+describe("conversation resolution in the summary", () => {
+  const comment: PullRequestComment = {
+    id: "reply",
+    kind: "issue-comment",
+    author: null,
+    body: "Looks good",
+    createdAt: "2026-10-12T00:00:00Z",
+    url: null,
+    path: null,
+    reviewState: null,
+  };
+
+  it("leaves ordinary comments unclassified and does not treat an outdated remark as resolved", () => {
+    expect(pullRequestCommentResolution(comment)).toBeUndefined();
+    expect(isFinishedPullRequestComment(comment)).toBe(false);
+    expect(
+      isFinishedPullRequestComment({
+        ...comment,
+        resolution: { threadId: "root", isResolved: false, isOutdated: true },
+      }),
+    ).toBe(false);
+  });
+
+  it("includes resolved global remarks in the existing finished-work filter and supports reopening", () => {
+    const resolved = {
+      ...comment,
+      resolution: { threadId: "root", isResolved: true, isOutdated: false },
+    };
+    expect(pullRequestCommentResolution(resolved)?.threadId).toBe("root");
+    expect(isFinishedPullRequestComment(resolved)).toBe(true);
+    expect(
+      isFinishedPullRequestComment({
+        ...resolved,
+        resolution: { ...resolved.resolution, isResolved: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFinishedPullRequestComment({ ...comment, kind: "review", reviewState: "DISMISSED" }),
+    ).toBe(true);
+  });
+
+  it("retains the existing line thread identity, state, and per-thread permission", () => {
+    const thread: PullRequestReviewThread = {
+      id: "inline-root",
+      path: "app.ts",
+      line: 1,
+      side: "right",
+      isResolved: true,
+      isOutdated: false,
+      canResolve: false,
+      comments: [],
+    };
+    expect(pullRequestCommentResolution(comment, thread)).toEqual({
+      threadId: "inline-root",
+      isResolved: true,
+      isOutdated: false,
+      canResolve: false,
+    });
+    expect(isFinishedPullRequestComment(comment, thread)).toBe(true);
+  });
+});
 
 it("groups checks needing attention before running and completed checks without losing any", () => {
   const checks = (
