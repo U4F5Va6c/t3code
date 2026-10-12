@@ -2122,6 +2122,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(config.appId, "io.github.u4f5va6c.t3code.codeup-preview");
       assert.equal(config.productName, "T3 Code (Codeup Preview)");
       assert.equal(config.publish, undefined);
+      assert.deepStrictEqual(mac.target, ["dmg"]);
       assert.equal(mac.identity, "-");
       assert.equal(mac.hardenedRuntime, false);
       assert.equal(mac.notarize, false);
@@ -2146,6 +2147,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       const mac = config.mac as Record<string, unknown>;
       assert.equal(config.appId, "com.t3tools.t3code");
+      assert.deepStrictEqual(mac.target, ["dmg", "zip"]);
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.notProperty(mac, "identity");

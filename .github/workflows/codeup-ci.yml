@@ -94,8 +94,11 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
-          cache: true
-          run-install: true
+          # Restoring/saving the full workspace store costs minutes on Intel runners.
+          cache: false
+          run-install: false
+      - name: Install desktop build dependencies
+        run: vp install --frozen-lockfile --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
       - name: Install Electron
         run: vp run --filter @t3tools/desktop ensure:electron
       - name: Build isolated acceptance app
@@ -135,3 +138,4 @@ jobs:
             artifacts/SIGNATURE-*.txt
           if-no-files-found: error
           retention-days: 30
+          compression-level: 0
