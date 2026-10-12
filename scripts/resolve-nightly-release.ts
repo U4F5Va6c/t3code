@@ -97,7 +97,7 @@ export const resolveNightlyTargetVersion = (version: string) => {
 };
 
 /** Prerelease trains that share nightly's date-and-run versioning. */
-export const PrereleaseChannel = Schema.Literals(["nightly", "preview"]);
+export const PrereleaseChannel = Schema.Literals(["nightly", "preview", "codeup"]);
 export type PrereleaseChannel = typeof PrereleaseChannel.Type;
 
 // The preview label is deliberately loud: the releases page is the one place
@@ -105,6 +105,7 @@ export type PrereleaseChannel = typeof PrereleaseChannel.Type;
 // reads before the warning in the body.
 const CHANNEL_RELEASE_LABELS: Record<PrereleaseChannel, string> = {
   nightly: "Nightly",
+  codeup: "Codeup Preview",
   preview: "Preview (maintainer test build, do not install)",
 };
 

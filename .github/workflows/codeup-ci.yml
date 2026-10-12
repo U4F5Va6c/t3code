@@ -68,6 +68,12 @@ jobs:
           apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts
           apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
           apps/web/src/components/settings/ProviderSettingsForm.test.ts
+          scripts/lib/brand-assets.test.ts
+          scripts/resolve-nightly-release.test.ts
+          scripts/build-desktop-artifact.test.ts
+          apps/desktop/src/updates/updateChannels.test.ts
+          apps/desktop/src/app/DesktopEnvironment.test.ts
+          apps/web/src/branding.test.ts
 
   macos-preview:
     name: Codeup Preview DMG (${{ matrix.arch }})
@@ -101,6 +107,13 @@ jobs:
         run: vp install --frozen-lockfile --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
       - name: Install Electron
         run: vp run --filter @t3tools/desktop ensure:electron
+      - name: Resolve shared Codeup version
+        run: |
+          node scripts/resolve-nightly-release.ts --date "$(git show -s --format=%cs HEAD | tr -d '-')" --run-number "$GITHUB_RUN_NUMBER" --sha "$(git rev-parse HEAD)" --channel codeup > "$RUNNER_TEMP/codeup-version"
+          version="$(sed -n 's/^version=//p' "$RUNNER_TEMP/codeup-version")"
+          test -n "$version"
+          echo "CODEUP_VERSION=$version" >> "$GITHUB_ENV"
+          node scripts/update-release-package-versions.ts "$version"
       - name: Build isolated acceptance app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -108,8 +121,7 @@ jobs:
           CSC_FOR_PULL_REQUEST: "true"
           T3CODE_DESKTOP_UPDATE_REPOSITORY: U4F5Va6c/t3code
         run: |
-          version="0.0.0-codeup.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}"
-          vp run dist:desktop:artifact --platform mac --target dmg --arch '${{ matrix.arch }}' --build-version "$version" --output-dir artifacts --verbose
+          vp run dist:desktop:artifact --platform mac --target dmg --arch '${{ matrix.arch }}' --build-version "$CODEUP_VERSION" --output-dir artifacts --verbose
           shasum -a 256 artifacts/*.dmg > artifacts/SHA256SUMS.txt
           git rev-parse HEAD > artifacts/COMMIT.txt
       - name: Verify app inside DMG
@@ -127,6 +139,27 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$preview_app" 2>&1 | tee -a "$preview_report"
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$preview_app/Contents/Info.plist")" = 'io.github.u4f5va6c.t3code.codeup-preview'
           ELECTRON_RUN_AS_NODE=1 "$preview_app/Contents/MacOS/T3 Code (Codeup Preview)" -e 'if (!process.versions.electron) process.exit(1); console.log(`Packaged Electron ${process.versions.electron} (${process.arch}) started`)' | tee -a "$preview_report"
+      - name: Build Mac standalone backend
+        if: matrix.arch == 'arm64'
+        env:
+          VP_NODE_VERSION: "26.8.2"
+        run: |
+          node apps/server/scripts/cli.ts build-exe --verbose
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/darwin-arm64"
+          cp native/resource-monitor/target/aarch64-apple-darwin/release/t3-resource-monitor "$RUNNER_TEMP/cli-resource-monitor/darwin-arm64/"
+          node scripts/build-cli-archive.ts --platform mac --arch arm64 --version "$CODEUP_VERSION" --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive release-cli/*.tar.gz --expect-version "$CODEUP_VERSION"
+          shasum -a 256 release-cli/*.tar.gz > release-cli/SHA256SUMS.txt
+          git rev-parse HEAD > release-cli/COMMIT.txt
+      - name: Upload Mac standalone backend
+        if: matrix.arch == 'arm64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: codeup-preview-cli-darwin-arm64-${{ github.event.pull_request.head.sha }}
+          path: release-cli/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
       - name: Upload DMG and checksum
         uses: actions/upload-artifact@v7
         with:
@@ -136,6 +169,60 @@ jobs:
             artifacts/SHA256SUMS.txt
             artifacts/COMMIT.txt
             artifacts/SIGNATURE-*.txt
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  linux-backend:
+    name: Codeup Preview backend (Linux x64)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+      - name: Install backend build dependencies
+        run: vp install --frozen-lockfile --filter=t3... --filter=@t3tools/scripts...
+      - name: Resolve shared Codeup version
+        run: |
+          node scripts/resolve-nightly-release.ts --date "$(git show -s --format=%cs HEAD | tr -d '-')" --run-number "$GITHUB_RUN_NUMBER" --sha "$(git rev-parse HEAD)" --channel codeup > "$RUNNER_TEMP/codeup-version"
+          version="$(sed -n 's/^version=//p' "$RUNNER_TEMP/codeup-version")"
+          test -n "$version"
+          echo "CODEUP_VERSION=$version" >> "$GITHUB_ENV"
+          node scripts/update-release-package-versions.ts "$version"
+      - name: Build Web and resource monitor
+        run: |
+          vp run --filter @t3tools/web build
+          mkdir -p apps/server/dist/client
+          cp -R apps/web/dist/. apps/server/dist/client/
+          node scripts/apply-web-brand-assets.ts nightly apps/server/dist/client
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/linux-x64"
+          cp native/resource-monitor/target/release/t3-resource-monitor "$RUNNER_TEMP/cli-resource-monitor/linux-x64/"
+      - name: Build and verify standalone backend
+        env:
+          VP_NODE_VERSION: "26.8.2"
+        run: |
+          node apps/server/scripts/cli.ts build-exe --verbose
+          node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$CODEUP_VERSION" --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive release-cli/*.tar.gz --expect-version "$CODEUP_VERSION"
+          sha256sum release-cli/*.tar.gz > release-cli/SHA256SUMS.txt
+          git rev-parse HEAD > release-cli/COMMIT.txt
+      - name: Upload Linux standalone backend
+        uses: actions/upload-artifact@v7
+        with:
+          name: codeup-preview-cli-linux-x64-${{ github.event.pull_request.head.sha }}
+          path: release-cli/
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
