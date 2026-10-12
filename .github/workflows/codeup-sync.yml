@@ -1,0 +1,54 @@
+name: Codeup Nightly Sync
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Discover the published Nightly without changing the sync branch
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: codeup-nightly-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'U4F5Va6c/t3code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: codeup-integration
+          fetch-depth: 0
+      - name: Set merge identity
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Update one Nightly PR
+        uses: actions/github-script@v8
+        env:
+          CODEUP_AUTO_MERGE: ${{ vars.CODEUP_AUTO_MERGE }}
+          CODEUP_DRY_RUN: ${{ inputs.dry_run }}
+        with:
+          script: |
+            const { sync } = require('./.github/scripts/codeup-sync.cjs');
+            const result = await sync({ github, context, core,
+              dryRun: process.env.CODEUP_DRY_RUN === 'true',
+              autoMerge: process.env.CODEUP_AUTO_MERGE === 'true' });
+            await core.summary.addCodeBlock(JSON.stringify(result, null, 2), 'json').write();
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: codeup-nightly-conflict-${{ github.run_id }}
+          path: codeup-sync-conflict.patch
+          if-no-files-found: ignore

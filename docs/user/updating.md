@@ -15,10 +15,33 @@ background service stays on its current release channel. A remote desktop app
 installs the latest release from its own channel. Hover the button to see what
 it will update.
 
-Server updates appear only after that version is published to npm. Remote
+Official server updates appear only after that version is published to npm. Codeup
+servers use complete releases from the Fork instead. Remote
 desktop apps do not wait for npm. Servers that need
 a manual update are not included. Use the notice or **Settings → Connections**
 for those.
+
+## Codeup Preview
+
+Codeup Preview follows its own update channel and can remain installed beside
+official T3 Code. Check for updates from the sidebar or Settings. If macOS
+rejects an automatic installation, open **Codeup Preview releases** in Settings,
+download the DMG for your Mac, quit Preview and replace that app. Your Preview
+profile and connections remain. Current ad-hoc builds may require this manual
+installation step.
+
+In **Settings → Connections**, Codeup servers are offered the latest complete
+Fork release, even before you update the client. Keep the client open through
+the server restart. Official and Codeup servers keep their own release sources;
+use Codeup Preview to manage Fork upgrades. An older official client may connect
+but cannot discover the Fork update channel.
+
+The Fork command-line installation uses `~/.t3-codeup` by default. Run `t3 update`
+on the server's machine to update its Fork installation. A server started by
+hand needs a restart; a supported background service can update from Connections.
+Updating a desktop-hosted server instead updates the desktop app on that machine.
+Keep a backup before upgrading important work: restoring an older executable
+alone does not undo database migrations.
 
 The confirmation counts the running threads that the restarts will interrupt,
 and how many can resume afterwards. See **Continue threads after restarts**

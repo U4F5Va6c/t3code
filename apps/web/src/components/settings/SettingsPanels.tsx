@@ -54,6 +54,7 @@ import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
+import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import { IS_NIGHTLY_BUILD, NightlyMobileBetaRow } from "../NightlyMobileBeta";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import {
@@ -449,7 +450,25 @@ function AboutVersionSection() {
           </Tooltip>
         }
       />
-      {hasDesktopBridge ? (
+      {hasDesktopBridge && isCodeupPreviewVersion(APP_VERSION) ? (
+        <SettingsRow
+          {...searchableSetting("update-track")}
+          description={
+            updateState?.status === "error"
+              ? `${updateState.message ?? "Update failed."} If macOS rejects the installer, download the DMG and replace Codeup Preview manually.`
+              : "Follows published Codeup releases based on upstream Nightly."
+          }
+          control={
+            <a
+              href={`https://github.com/${CODEUP_PREVIEW.repository}/releases`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Codeup Preview releases
+            </a>
+          }
+        />
+      ) : hasDesktopBridge ? (
         <SettingsRow
           {...searchableSetting("update-track")}
           description="Use stable releases or nightly builds. Switch back anytime."

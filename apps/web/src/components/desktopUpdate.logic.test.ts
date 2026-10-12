@@ -187,6 +187,9 @@ describe("desktop update UI helpers", () => {
   });
 
   it("builds the nightly release URL without dropping its version suffix", () => {
+    expect(getDesktopUpdateReleaseUrl("0.0.46-codeup.20261013.42")).toBe(
+      "https://github.com/U4F5Va6c/t3code/releases/tag/v0.0.46-codeup.20261013.42",
+    );
     expect(getDesktopUpdateReleaseUrl("0.0.30-nightly.20260728.931")).toBe(
       "https://github.com/pingdotgg/t3code/releases/tag/v0.0.30-nightly.20260728.931",
     );

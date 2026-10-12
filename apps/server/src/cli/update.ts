@@ -45,6 +45,7 @@ const ReleaseIndex = Schema.Array(
   Schema.Struct({
     tag_name: Schema.String,
     draft: Schema.optional(Schema.Boolean),
+    assets: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String }))),
   }),
 );
 const decodeReleaseIndex = Schema.decodeUnknownEffect(Schema.fromJsonString(ReleaseIndex));
@@ -62,7 +63,7 @@ const resolveNewestVersion = Effect.fn("cli.update.resolve_newest")(function* (
   for (let page = 1; page <= RELEASE_INDEX_MAX_PAGES; page += 1) {
     const body = yield* httpClient
       .execute(
-        HttpClientRequest.get(cliReleaseIndexPageUrl(page)).pipe(
+        HttpClientRequest.get(cliReleaseIndexPageUrl(page, channel)).pipe(
           HttpClientRequest.setHeader("Accept", "application/vnd.github+json"),
         ),
       )
@@ -297,7 +298,11 @@ const belongsToBootService = Effect.fn("cli.update.belongs_to_boot_service")(fun
   const runner = yield* ProcessRunner.ProcessRunner;
   if (platform === "linux") {
     const cgroup = yield* fs.readFileString(`/proc/${pid}/cgroup`).pipe(Effect.option);
-    return Option.isSome(cgroup) && cgroup.value.includes("/t3code.service");
+    const unit =
+      cliReleaseChannelOf(packageJson.version) === "codeup"
+        ? "t3code-codeup.service"
+        : "t3code.service";
+    return Option.isSome(cgroup) && cgroup.value.includes(`/${unit}`);
   }
   if (platform === "darwin") {
     // The service server's parent is the launcher process.
@@ -341,6 +346,11 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
 
   const currentVersion = packageJson.version;
   const channel = input.channel ?? cliReleaseChannelOf(currentVersion);
+  if (cliReleaseChannelOf(currentVersion) === "codeup" && channel !== "codeup") {
+    return yield* new CliUpdateError({
+      reason: "Codeup installs follow the codeup channel. Install official T3 separately.",
+    });
+  }
   if (input.requestedVersion !== undefined && !isExactServiceVersion(input.requestedVersion)) {
     return yield* new CliUpdateError({
       reason: `'${input.requestedVersion}' is not an exact t3 version.`,
@@ -354,6 +364,11 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
       : Effect.succeed(input.requestedVersion)
   ).pipe(Effect.ensuring(Effect.sync(progress.finish)));
   const targetChannel = cliReleaseChannelOf(targetVersion);
+  if ((cliReleaseChannelOf(currentVersion) === "codeup") !== (targetChannel === "codeup")) {
+    return yield* new CliUpdateError({
+      reason: "Cannot switch between Codeup and official T3 in the same installation.",
+    });
+  }
 
   // Preview is a maintainers' dogfooding train: it is cut by hand from
   // unmerged branches, receives no fixes, and is never offered to anyone.

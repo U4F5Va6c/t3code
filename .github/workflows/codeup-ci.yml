@@ -9,15 +9,48 @@ on:
   push:
     branches:
       - codeup-integration
+  workflow_dispatch:
+    inputs:
+      release_candidate:
+        description: Publish an unmerged acceptance build excluded from the update channel
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: codeup-ci-${{ github.event.pull_request.number || github.sha }}
+  group: codeup-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  resolve:
+    name: Resolve Codeup release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+      build: ${{ steps.release.outputs.build }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Resolve published upstream baseline and build identity
+        id: release
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await require('./.github/scripts/codeup-release.cjs').resolve({ github, context, core });
+      - uses: actions/upload-artifact@v7
+        with:
+          name: codeup-build-metadata
+          path: codeup-build.json
+
   check:
     name: Lint, typecheck, source control tests
     runs-on: ubuntu-latest
@@ -74,10 +107,23 @@ jobs:
           apps/desktop/src/updates/updateChannels.test.ts
           apps/desktop/src/app/DesktopEnvironment.test.ts
           apps/web/src/branding.test.ts
+          apps/server/src/cloud/bootService.test.ts
+          apps/server/src/cloud/selfUpdate.test.ts
+          apps/server/src/cloud/pinnedRuntime.test.ts
+          apps/server/src/serviceLauncher.test.ts
+          apps/server/src/cli/update.test.ts
+          apps/desktop/src/updates/DesktopUpdates.test.ts
+          apps/web/src/versionSkew.test.ts
+          apps/web/src/components/desktopUpdate.logic.test.ts
+          apps/web/src/components/sidebar/updateEverything.logic.test.ts
+          apps/mobile/src/features/settings/environment-maintenance.test.ts
+      - name: Test Fork sync and atomic release publication
+        run: node --test .github/scripts/codeup-*.test.cjs
 
   macos-preview:
-    name: Codeup Preview DMG (${{ matrix.arch }})
-    if: github.event_name == 'pull_request'
+    name: Codeup Preview (${{ matrix.arch }})
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -92,7 +138,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           # Package the PR commit itself; the artifact and review use the same SHA.
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.resolve.outputs.sha }}
           sparse-checkout: |
             /*
             !/.repos/
@@ -108,18 +154,18 @@ jobs:
       - name: Install Electron
         run: vp run --filter @t3tools/desktop ensure:electron
       - name: Resolve shared Codeup version
+        env:
+          CODEUP_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
-          node scripts/resolve-nightly-release.ts --date "$(git show -s --format=%cs HEAD | tr -d '-')" --run-number "$GITHUB_RUN_NUMBER" --sha "$(git rev-parse HEAD)" --channel codeup > "$RUNNER_TEMP/codeup-version"
-          version="$(sed -n 's/^version=//p' "$RUNNER_TEMP/codeup-version")"
-          test -n "$version"
-          echo "CODEUP_VERSION=$version" >> "$GITHUB_ENV"
-          node scripts/update-release-package-versions.ts "$version"
+          echo "CODEUP_VERSION=$CODEUP_VERSION" >> "$GITHUB_ENV"
+          node scripts/update-release-package-versions.ts "$CODEUP_VERSION"
       - name: Build isolated acceptance app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           # The preview explicitly uses identity "-" (ad-hoc), without signing credentials.
           CSC_FOR_PULL_REQUEST: "true"
           T3CODE_DESKTOP_UPDATE_REPOSITORY: U4F5Va6c/t3code
+          T3CODE_CODEUP_RELEASE: ${{ github.ref == 'refs/heads/codeup-integration' || inputs.release_candidate == true }}
         run: |
           vp run dist:desktop:artifact --platform mac --target dmg --arch '${{ matrix.arch }}' --build-version "$CODEUP_VERSION" --output-dir artifacts --verbose
           shasum -a 256 artifacts/*.dmg > artifacts/SHA256SUMS.txt
@@ -155,7 +201,7 @@ jobs:
         if: matrix.arch == 'arm64'
         uses: actions/upload-artifact@v7
         with:
-          name: codeup-preview-cli-darwin-arm64-${{ github.event.pull_request.head.sha }}
+          name: codeup-preview-cli-darwin-arm64-${{ needs.resolve.outputs.sha }}
           path: release-cli/
           if-no-files-found: error
           retention-days: 30
@@ -163,9 +209,12 @@ jobs:
       - name: Upload DMG and checksum
         uses: actions/upload-artifact@v7
         with:
-          name: codeup-preview-macos-${{ matrix.arch }}-${{ github.event.pull_request.head.sha }}
+          name: codeup-preview-macos-${{ matrix.arch }}-${{ needs.resolve.outputs.sha }}
           path: |
             artifacts/*.dmg
+            artifacts/*.zip
+            artifacts/*.blockmap
+            artifacts/codeup-mac.yml
             artifacts/SHA256SUMS.txt
             artifacts/COMMIT.txt
             artifacts/SIGNATURE-*.txt
@@ -175,13 +224,14 @@ jobs:
 
   linux-backend:
     name: Codeup Preview backend (Linux x64)
-    if: github.event_name == 'pull_request'
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.resolve.outputs.sha }}
           sparse-checkout: |
             /*
             !/.repos/
@@ -194,12 +244,11 @@ jobs:
       - name: Install backend build dependencies
         run: vp install --frozen-lockfile --filter=t3... --filter=@t3tools/scripts...
       - name: Resolve shared Codeup version
+        env:
+          CODEUP_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
-          node scripts/resolve-nightly-release.ts --date "$(git show -s --format=%cs HEAD | tr -d '-')" --run-number "$GITHUB_RUN_NUMBER" --sha "$(git rev-parse HEAD)" --channel codeup > "$RUNNER_TEMP/codeup-version"
-          version="$(sed -n 's/^version=//p' "$RUNNER_TEMP/codeup-version")"
-          test -n "$version"
-          echo "CODEUP_VERSION=$version" >> "$GITHUB_ENV"
-          node scripts/update-release-package-versions.ts "$version"
+          echo "CODEUP_VERSION=$CODEUP_VERSION" >> "$GITHUB_ENV"
+          node scripts/update-release-package-versions.ts "$CODEUP_VERSION"
       - name: Build Web and resource monitor
         run: |
           vp run --filter @t3tools/web build
@@ -221,8 +270,39 @@ jobs:
       - name: Upload Linux standalone backend
         uses: actions/upload-artifact@v7
         with:
-          name: codeup-preview-cli-linux-x64-${{ github.event.pull_request.head.sha }}
+          name: codeup-preview-cli-linux-x64-${{ needs.resolve.outputs.sha }}
           path: release-cli/
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+
+  publish:
+    name: Publish complete Codeup release
+    needs: [resolve, check, macos-preview, linux-backend]
+    if: github.repository == 'U4F5Va6c/t3code' && (github.ref == 'refs/heads/codeup-integration' || inputs.release_candidate == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          sparse-checkout: |
+            .github/scripts
+            scripts/lib
+      - uses: actions/download-artifact@v8
+        with:
+          path: release-input
+      - name: Verify, assemble, and publish atomically
+        uses: actions/github-script@v8
+        env:
+          CODEUP_CANDIDATE: ${{ inputs.release_candidate == true && github.ref != 'refs/heads/codeup-integration' }}
+        with:
+          script: |
+            const fs = require('node:fs/promises');
+            const { assemble, publish } = require('./.github/scripts/codeup-release.cjs');
+            const metadata = JSON.parse(await fs.readFile('release-input/codeup-build-metadata/codeup-build.json', 'utf8'));
+            await assemble('release-input', 'release-output', metadata);
+            const url = await publish({ github, directory: 'release-output', metadata, candidate: process.env.CODEUP_CANDIDATE === 'true' });
+            await core.summary.addLink('Complete Codeup release', url).write();

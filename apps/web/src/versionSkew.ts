@@ -6,6 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
+import { isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import * as Schema from "effect/Schema";
 
 import { APP_VERSION } from "./branding";
@@ -67,12 +68,19 @@ export function resolveVersionMismatch(
   if (!normalizedClientVersion || !normalizedServerVersion) {
     return null;
   }
+  if (
+    isCodeupPreviewVersion(normalizedClientVersion) !==
+    isCodeupPreviewVersion(normalizedServerVersion)
+  )
+    return null;
 
   const clientCore = versionCore(normalizedClientVersion);
   const serverCore = versionCore(normalizedServerVersion);
   const compareNightlyBuilds =
-    parseSemver(normalizedClientVersion)?.prerelease[0] === "nightly" &&
-    parseSemver(normalizedServerVersion)?.prerelease[0] === "nightly";
+    (parseSemver(normalizedClientVersion)?.prerelease[0] === "nightly" &&
+      parseSemver(normalizedServerVersion)?.prerelease[0] === "nightly") ||
+    (isCodeupPreviewVersion(normalizedClientVersion) &&
+      isCodeupPreviewVersion(normalizedServerVersion));
   const serverIsBehind =
     parseSemver(clientCore) && parseSemver(serverCore)
       ? compareSemverVersions(
@@ -93,8 +101,13 @@ export function resolveVersionMismatch(
 
 export function resolveServerConfigVersionMismatch(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
+  codeupVersion?: string | null,
 ): VersionMismatch | null {
-  return resolveVersionMismatch(serverConfig?.environment.serverVersion);
+  const version = serverConfig?.environment.serverVersion;
+  return resolveVersionMismatch(
+    version,
+    isCodeupPreviewVersion(version) ? (codeupVersion ?? APP_VERSION) : APP_VERSION,
+  );
 }
 
 /** The update path the connected server offers, or null when it only
@@ -126,6 +139,7 @@ export function manualServerUpdateCommand(
   targetVersion: string,
   installation?: ServerInstallation,
 ): string {
+  if (isCodeupPreviewVersion(targetVersion)) return `t3 update ${targetVersion}`;
   if (installation?.kind === "npm-global") {
     const prefix = `'${installation.prefix.replaceAll("'", "'\\''")}'`;
     return `npm install --global --prefix ${prefix} t3@${targetVersion}`;

@@ -21,6 +21,71 @@ import * as DesktopUpdates from "./DesktopUpdates.ts";
 import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("DesktopUpdates", () => {
+  it.effect("pins a release build to the Fork feed and rejects official update events", () => {
+    const harness = makeHarness({
+      appVersion: "0.0.46-codeup.20261013.1",
+      appUpdateYml: "provider: github\nowner: pingdotgg\nrepo: t3code\n",
+      env: {
+        T3CODE_DESKTOP_MOCK_UPDATES: "false",
+        T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT: undefined,
+      },
+    });
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        assert.deepEqual(harness.feedUrls(), [
+          {
+            provider: "github",
+            owner: "U4F5Va6c",
+            repo: "t3code",
+            channel: "codeup",
+            releaseType: "prerelease",
+          },
+        ]);
+        for (const version of ["0.0.47", "0.0.47-nightly.20261013.1"]) {
+          harness.emit("update-available", { version });
+          yield* flushCallbacks;
+          assert.equal((yield* updates.getState).availableVersion, null);
+        }
+        harness.emit("update-available", { version: "0.0.46-codeup.20261013.2" });
+        yield* flushCallbacks;
+        assert.equal((yield* updates.getState).availableVersion, "0.0.46-codeup.20261013.2");
+        assert.equal(yield* (yield* ElectronUpdater.ElectronUpdater).allowDowngrade, false);
+      }),
+    ).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("leaves temporary Codeup packages without a feed disabled", () => {
+    const harness = makeHarness({
+      appVersion: "0.0.46-codeup.20261013.1",
+      env: {
+        T3CODE_DESKTOP_MOCK_UPDATES: "false",
+        T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT: undefined,
+      },
+    });
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        assert.equal((yield* updates.getState).enabled, false);
+      }),
+    ).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("keeps Codeup updates on its own channel even with old stable preferences", () => {
+    const harness = makeHarness({ appVersion: "0.0.46-codeup.20261013.42" });
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        assert.equal((yield* updates.getState).channel, "codeup");
+        assert.equal((yield* updates.getState).enabled, true);
+        assert.equal((yield* updates.setChannel("nightly")).channel, "codeup");
+        assert.equal((yield* updates.setChannel("latest")).channel, "codeup");
+      }),
+    ).pipe(Effect.provide(harness.layer));
+  });
   it("preserves complete causes for update poller and event failures", () => {
     const cause = Cause.combine(
       Cause.fail(new Error("updater failed")),

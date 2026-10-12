@@ -12,6 +12,9 @@ import { HttpClient } from "effect/http";
 import * as Schema from "effect/Schema";
 
 import { CLI_RELEASE_BASE_URL_ENV } from "@t3tools/shared/cliRelease";
+import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Pure unit renderers run outside an Effect runtime.
+import * as NodePath from "node:path";
 
 import * as ProcessRunner from "../processRunner.ts";
 import {
@@ -31,12 +34,6 @@ import {
   type ServiceState,
 } from "./serviceProtocol.ts";
 
-const BOOT_SERVICE_NAME = "t3code";
-const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
-// `.service` suffix keeps the label distinct from the desktop app's bundle id
-// (com.t3tools.t3code), so launchd and TCC records never collide.
-const BOOT_SERVICE_LAUNCHD_LABEL = "com.t3tools.t3code.service";
-const BOOT_SERVICE_PLIST_FILE = `${BOOT_SERVICE_LAUNCHD_LABEL}.plist`;
 const BOOT_SERVICE_UNIT_ENV = "T3_BOOT_SERVICE_UNIT";
 /** File in the logs dir that receives the service's stdout and stderr. `t3 triage` points agents at it. */
 export const BOOT_SERVICE_LOG_FILE = "boot-service.log";
@@ -101,7 +98,7 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
     "Type=simple",
     "WorkingDirectory=%h",
     `Environment=T3CODE_HOME=${quoteSystemdValue(plan.baseDir)}`,
-    `Environment=${BOOT_SERVICE_UNIT_ENV}=${BOOT_SERVICE_UNIT_FILE}`,
+    `Environment=${BOOT_SERVICE_UNIT_ENV}=${quoteSystemdValue(NodePath.basename(plan.unitPath))}`,
     `ExecStart=${plan.program.map(quoteSystemdValue).join(" ")}`,
     // Let the launcher mark an explicit stop before it signals the server.
     // systemd still SIGKILLs the whole cgroup if graceful shutdown times out.
@@ -159,7 +156,7 @@ export function renderBootServicePlist(
     `<plist version="1.0">`,
     `<dict>`,
     `  <key>Label</key>`,
-    `  <string>${BOOT_SERVICE_LAUNCHD_LABEL}</string>`,
+    `  <string>${escapeXmlText(NodePath.basename(plan.unitPath, ".plist"))}</string>`,
     `  <key>ProgramArguments</key>`,
     `  <array>`,
     ...plan.program.map((argument) => `    <string>${escapeXmlText(argument)}</string>`),
@@ -171,7 +168,7 @@ export function renderBootServicePlist(
     `    <key>T3CODE_HOME</key>`,
     `    <string>${escapeXmlText(plan.baseDir)}</string>`,
     `    <key>${BOOT_SERVICE_UNIT_ENV}</key>`,
-    `    <string>${BOOT_SERVICE_PLIST_FILE}</string>`,
+    `    <string>${escapeXmlText(NodePath.basename(plan.unitPath))}</string>`,
     `  </dict>`,
     `  <key>WorkingDirectory</key>`,
     `  <string>${escapeXmlText(options.homeDir)}</string>`,
@@ -241,7 +238,9 @@ export interface BootServiceManager {
 function systemdManager(input: {
   readonly path: Path.Path;
   readonly homeDir: string;
+  readonly unit: string;
 }): BootServiceManager {
+  const BOOT_SERVICE_UNIT_FILE = input.unit;
   const unitPath = input.path.join(
     input.homeDir,
     ".config",
@@ -309,7 +308,10 @@ function launchdManager(input: {
   readonly homeDir: string;
   readonly uid: number;
   readonly environmentPath: string;
+  readonly label: string;
 }): BootServiceManager {
+  const BOOT_SERVICE_LAUNCHD_LABEL = input.label;
+  const BOOT_SERVICE_PLIST_FILE = `${input.label}.plist`;
   const unitPath = input.path.join(
     input.homeDir,
     "Library",
@@ -392,12 +394,18 @@ function selectBootServiceManager(input: {
   readonly uid: number | undefined;
   readonly path: Path.Path;
   readonly environmentPath: string;
+  readonly cliVersion: string;
 }): BootServiceManager | undefined {
+  const codeup = isCodeupPreviewVersion(input.cliVersion);
   if (input.homeDir === "") {
     return undefined;
   }
   if (input.platform === "linux") {
-    return systemdManager({ path: input.path, homeDir: input.homeDir });
+    return systemdManager({
+      path: input.path,
+      homeDir: input.homeDir,
+      unit: codeup ? CODEUP_PREVIEW.serviceUnit : "t3code.service",
+    });
   }
   if (input.platform === "darwin" && input.uid !== undefined) {
     return launchdManager({
@@ -405,6 +413,7 @@ function selectBootServiceManager(input: {
       homeDir: input.homeDir,
       uid: input.uid,
       environmentPath: input.environmentPath,
+      label: codeup ? CODEUP_PREVIEW.serviceLabel : "com.t3tools.t3code.service",
     });
   }
   return undefined;
@@ -467,7 +476,7 @@ export function formatBootServiceProblem(problem: BootServiceProblem): string {
     case "service-disabled":
       return "The service is not enabled to start automatically. Run `t3 service install` to repair it.";
     case "service-stopped":
-      return "The service is not running. Check the service log and `systemctl --user status t3code.service`, then run `t3 service install`.";
+      return "The service is not running. Check the service log and `t3 service status`, then run `t3 service install`.";
     case "restart-pending":
       return "A newer version is installed but the service is still running the previous one. Run `t3 service restart` to switch.";
   }
@@ -603,6 +612,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     uid,
     path,
     environmentPath,
+    cliVersion: input.cliVersion,
   });
   const unitPath = detectedManager?.unitPath ?? "";
   const logPath = path.join(input.logsDir, BOOT_SERVICE_LOG_FILE);
@@ -716,8 +726,8 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     if (includeService && succeeded(manager)) {
       const [enabled, active] = yield* Effect.all(
         [
-          probe("systemctl", ["--user", "is-enabled", BOOT_SERVICE_UNIT_FILE]),
-          probe("systemctl", ["--user", "is-active", BOOT_SERVICE_UNIT_FILE]),
+          probe("systemctl", ["--user", "is-enabled", path.basename(unitPath)]),
+          probe("systemctl", ["--user", "is-active", path.basename(unitPath)]),
         ],
         { concurrency: "unbounded" },
       );

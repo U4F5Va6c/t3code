@@ -1,4 +1,5 @@
 import type { DesktopUpdateChannel } from "@t3tools/contracts";
+import { isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 
 const NIGHTLY_VERSION_PATTERN = /^[^-+]+-nightly\.\d{8}\.\d+$/;
 // Preview builds are the maintainers' test train, cut by hand from unreleased
@@ -14,5 +15,6 @@ export function isNightlyDesktopVersion(version: string): boolean {
 }
 
 export function resolveDefaultDesktopUpdateChannel(appVersion: string): DesktopUpdateChannel {
+  if (isCodeupPreviewVersion(appVersion)) return "codeup";
   return NIGHTLY_VERSION_PATTERN.test(appVersion) ? "nightly" : "latest";
 }

@@ -7,6 +7,10 @@ import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
+// Effect FileSystem has no filesystem-capacity operation.
+// @effect-diagnostics-next-line nodeBuiltinImport:off
+import * as NodeFSP from "node:fs/promises";
+import { isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import {
@@ -36,6 +40,11 @@ const PINNED_RUNTIME_ARCHIVE_FILE = "t3-runtime-archive";
 // Boot-service setup and remote update can construct separate layers. Serialize
 // the complete install transaction across every caller in this process.
 const pinnedRuntimeInstallLock = Semaphore.makeUnsafe(1);
+
+/** Leave room for the compressed file, extraction and the launcher's database backup. */
+export function hasRuntimeInstallSpace(available: bigint, archiveBytes: number): boolean {
+  return available >= BigInt(Math.max(512 * 1024 * 1024, archiveBytes * 8));
+}
 
 export interface PinnedRuntimePaths {
   readonly versionDir: string;
@@ -192,6 +201,15 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
       step: `selecting a t3 release archive for ${input.platform}-${input.arch}`,
     });
   }
+  if (
+    isCodeupPreviewVersion(input.version) &&
+    platformKey !== "darwin-arm64" &&
+    platformKey !== "linux-x64"
+  ) {
+    return yield* new PinnedRuntimeInstallError({
+      step: `selecting a Codeup archive (only macOS arm64 and Linux x64 are published)`,
+    });
+  }
   const httpClient = input.httpClient;
   const baseUrl = cliReleaseDownloadBaseUrl(input.version, input.releaseBaseUrl);
   const fileName = cliArchiveFileName(input.version, platformKey);
@@ -228,6 +246,22 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
     return yield* new PinnedRuntimeInstallError({
       step: "verifying the t3 release archive checksum",
     });
+  }
+
+  if (isCodeupPreviewVersion(input.version)) {
+    const disk = yield* Effect.tryPromise({
+      try: () => NodeFSP.statfs(stagingDir, { bigint: true }),
+      catch: (cause) =>
+        new PinnedRuntimeInstallError({
+          step: "checking free space for the Codeup runtime",
+          cause,
+        }),
+    });
+    if (!hasRuntimeInstallSpace(disk.bavail * disk.bsize, archive.byteLength)) {
+      return yield* new PinnedRuntimeInstallError({
+        step: "reserving space for the Codeup runtime and database backup; free disk space and retry",
+      });
+    }
   }
 
   const archivePath = path.join(stagingDir, PINNED_RUNTIME_ARCHIVE_FILE);

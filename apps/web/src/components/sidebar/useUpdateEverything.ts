@@ -7,7 +7,8 @@ import { APP_VERSION } from "~/branding";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
-import { useNpmReleasePublished } from "~/state/npmRelease";
+import { useCodeupReleaseVersion, useReleasePublished } from "~/state/releases";
+import { isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import { serverEnvironment } from "~/state/server";
 import { environmentSession } from "~/state/session";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
@@ -27,7 +28,8 @@ import {
  * this app's own download and install when given.
  */
 export function useUpdateEverything(localUpdateVersion: string | null) {
-  const targetVersion = localUpdateVersion ?? APP_VERSION;
+  const codeupVersion = useCodeupReleaseVersion(isCodeupPreviewVersion(APP_VERSION));
+  const targetVersion = localUpdateVersion ?? codeupVersion ?? APP_VERSION;
   const { environments } = useEnvironments();
   const machinesAtom = useMemo(
     () =>
@@ -53,8 +55,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   const behindServers = collectServerUpdateTargets(machines, targetVersion);
   // A desktop-managed server installs from its own app's update feed, so only
   // servers that download t3 from npm wait for npm to publish the version.
-  const needsNpm = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
-  const published = useNpmReleasePublished(needsNpm ? targetVersion : null);
+  const needsRelease = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
+  const published = useReleasePublished(needsRelease ? targetVersion : null);
   const servers = published
     ? behindServers
     : behindServers.filter((server) => server.selfUpdate === "desktop-managed");

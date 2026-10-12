@@ -27,6 +27,15 @@ const MISMATCH_HINT =
   "Version mismatch. Try syncing the client and server to the same T3 Code version.";
 
 describe("versionSkew", () => {
+  it("compares Codeup build numbers and never suggests replacing an official install with a Fork", () => {
+    const old = "0.0.46-codeup.20261012.16";
+    const next = "0.0.46-codeup.20261013.42";
+    expect(resolveVersionMismatch(old, next)?.clientVersion).toBe(next);
+    expect(resolveVersionMismatch(next, old)).toBeNull();
+    expect(resolveVersionMismatch(old, "0.0.47-nightly.20261013.50")).toBeNull();
+    expect(resolveVersionMismatch("0.0.45", next)).toBeNull();
+    expect(manualServerUpdateCommand(next)).toBe(`t3 update ${next}`);
+  });
   it("updates only the proven npm prefix and safely quotes its path", () => {
     expect(manualServerUpdateCommand("0.0.45", { kind: "npm-global", prefix: "/opt/node" })).toBe(
       "npm install --global --prefix '/opt/node' t3@0.0.45",

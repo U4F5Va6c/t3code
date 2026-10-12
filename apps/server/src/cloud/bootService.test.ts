@@ -247,6 +247,39 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
 });
 
 it.layer(NodeServices.layer)("boot service install", (it) => {
+  it.effect.each(["darwin", "linux"] as const)(
+    "Codeup manages its own %s service without touching the official unit",
+    (platform) =>
+      Effect.gen(function* () {
+        const { service, makeService, fs, commands } = yield* makeHarness(platform);
+        yield* service.install();
+        const official = yield* service.status;
+        const original = yield* fs.readFileString(official.unitPath);
+        commands.length = 0;
+        const fork = yield* makeService(
+          undefined,
+          "0.0.46-codeup.20261013.42",
+          `${official.installedBaseDir}-codeup`,
+        );
+        yield* fork.install();
+        const status = yield* fork.status;
+        expect(status.unitPath).toContain(
+          platform === "darwin"
+            ? "io.github.u4f5va6c.t3code.codeup.service.plist"
+            : "t3code-codeup.service",
+        );
+        expect(yield* fs.readFileString(official.unitPath)).toBe(original);
+        expect(
+          commands.every(
+            (command) =>
+              !command.includes("com.t3tools.t3code.service") &&
+              !command.endsWith(" t3code.service"),
+          ),
+        ).toBe(true);
+        yield* fork.uninstall;
+        expect(yield* fs.readFileString(official.unitPath)).toBe(original);
+      }),
+  );
   it.effect(
     "fails before installing files or validating a runtime when lingering needs an administrator",
     () =>
