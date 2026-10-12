@@ -3,6 +3,10 @@ name: Codeup Nightly Sync
 on:
   schedule:
     - cron: "23 */6 * * *"
+  workflow_run:
+    workflows: [Codeup CI]
+    types: [completed]
+    branches: [sync/upstream-nightly]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -22,7 +26,7 @@ concurrency:
 
 jobs:
   sync:
-    if: github.repository == 'U4F5Va6c/t3code'
+    if: github.repository == 'U4F5Va6c/t3code' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

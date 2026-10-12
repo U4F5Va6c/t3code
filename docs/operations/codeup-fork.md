@@ -13,7 +13,7 @@ Codeup 原生适配的上游基线记录在 [codeup-upstream.json](../../.github
 - `main` 保持上游主线，不放定制提交；`codeup-integration` 是 Fork 默认分支和长期集成分支。
 - 功能分支从 `codeup-integration` 创建。Codeup Provider、ProjeX 与发布分别保持清楚的提交边界。
 
-`Codeup Nightly Sync` 每 6 小时检查官方**已发布的 Nightly tag**，也支持 Actions 手动触发和 dry run。始终复用 `sync/upstream-nightly` 的一个 PR；数天未合并时，新 Nightly 更新同一 PR 并重新检查，无需逐个合并中间版本。冲突会保留原远程分支，在 PR（首次同步则 #15）报告，并上传 patch；不会强推。默认人工合并。若选择自动合并，先在仓库启用 GitHub Auto-merge，再设置 Actions variable `CODEUP_AUTO_MERGE=true`；它仍受必需检查及评审保护约束。
+`Codeup Nightly Sync` 每 6 小时检查官方**已发布的 Nightly tag**，也支持 Actions 手动触发和 dry run。始终复用 `sync/upstream-nightly` 的一个 PR；数天未合并时，新 Nightly 更新同一 PR 并重新检查，无需逐个合并中间版本。冲突会保留原远程分支，在 PR（首次同步则 #15）报告，并上传 patch；不会强推。默认人工合并。若选择自动合并，设置 Actions variable `CODEUP_AUTO_MERGE=true`；同步 CI 成功后，工作流通过受保护的合并 API 合入确切 SHA，再显式触发集成分支发布。它仍受必需检查及评审保护约束；未满足门槛会等待下次检查。
 
 定时工作流必须已合入默认分支。仓库 Actions 设置需允许创建 PR，默认 token 保持只读，写权限仅授予同步及发布 job。机器人创建 PR 后显式 dispatch Codeup CI，避免 `GITHUB_TOKEN` 的事件抑制导致无检查。新增上游工作流仍须保持禁用。
 

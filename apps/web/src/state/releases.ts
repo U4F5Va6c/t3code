@@ -10,6 +10,14 @@ import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { AsyncResult, Atom } from "effect/reactivity";
 
+const Release = Schema.Struct({
+  tag_name: Schema.String,
+  draft: Schema.optionalKey(Schema.Boolean),
+  assets: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String }))),
+});
+const decodeRelease = Schema.decodeUnknownEffect(Release);
+const decodeReleases = Schema.decodeUnknownEffect(Schema.Array(Release));
+
 /**
  * Whether the matching release source has published an installable version.
  * A 404 is false; network errors stay unknown. Re-check every few minutes, so a release
@@ -28,7 +36,7 @@ const releasePublishedAtom = Atom.family((version: string) =>
         Effect.flatMap((ok) => ok.json),
       );
       if (isCodeupPreviewVersion(version)) {
-        const release = yield* Schema.decodeUnknownEffect(Release)(body);
+        const release = yield* decodeRelease(body);
         return (
           !release.draft && release.tag_name === `v${version}` && hasCodeupReleaseAssets(release)
         );
@@ -55,19 +63,13 @@ export function useReleasePublished(version: string | null): boolean {
   return AsyncResult.getOrElse(result, () => false);
 }
 
-const Release = Schema.Struct({
-  tag_name: Schema.String,
-  draft: Schema.optionalKey(Schema.Boolean),
-  assets: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String }))),
-});
-
 const codeupReleaseAtom = Atom.make(
   Effect.gen(function* () {
     const response = yield* HttpClient.get(cliReleaseIndexPageUrl(1, "codeup"));
     const body = yield* HttpClientResponse.filterStatusOk(response).pipe(
       Effect.flatMap((ok) => ok.json),
     );
-    const releases = yield* Schema.decodeUnknownEffect(Schema.Array(Release))(body);
+    const releases = yield* decodeReleases(body);
     return newestCliReleaseVersion(releases, "codeup") ?? null;
   }).pipe(Effect.provide(FetchHttpClient.layer)),
 ).pipe(Atom.withRefresh("5 minutes"), Atom.keepAlive);

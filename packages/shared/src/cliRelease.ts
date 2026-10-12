@@ -105,7 +105,7 @@ export function cliReleaseIndexPageUrl(page: number, channel?: CliReleaseChannel
 }
 
 /** Published last with the complete desktop/server asset set; old acceptance releases lack it. */
-export const CODEUP_RELEASE_MANIFEST = "codeup-release.json";
+const CODEUP_RELEASE_MANIFEST = "codeup-release.json";
 
 export function hasCodeupReleaseAssets(release: {
   readonly assets?: ReadonlyArray<{ readonly name: string }> | undefined;

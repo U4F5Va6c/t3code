@@ -1,4 +1,5 @@
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { CODEUP_PREVIEW } from "@t3tools/shared/codeupPreview";
 import {
   CLI_RELEASE_BASE_URL_ENV,
   CLI_RELEASE_CHANNELS,
@@ -300,7 +301,7 @@ const belongsToBootService = Effect.fn("cli.update.belongs_to_boot_service")(fun
     const cgroup = yield* fs.readFileString(`/proc/${pid}/cgroup`).pipe(Effect.option);
     const unit =
       cliReleaseChannelOf(packageJson.version) === "codeup"
-        ? "t3code-codeup.service"
+        ? CODEUP_PREVIEW.serviceUnit
         : "t3code.service";
     return Option.isSome(cgroup) && cgroup.value.includes(`/${unit}`);
   }

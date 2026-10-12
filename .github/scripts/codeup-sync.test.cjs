@@ -70,6 +70,7 @@ function fixture() {
   let pr;
   let creates = 0;
   let dispatches = 0;
+  const runs = [];
   const comments = [];
   const github = {
     paginate: async (method) => (method === "releases" ? releases : []),
@@ -90,8 +91,18 @@ function fixture() {
         },
       },
       actions: {
-        createWorkflowDispatch: async () => {
+        listWorkflowRuns: async ({ head_sha, branch }) => ({
+          data: {
+            workflow_runs: runs.filter((r) => r.head_sha === head_sha && r.head_branch === branch),
+          },
+        }),
+        createWorkflowDispatch: async ({ ref }) => {
           dispatches++;
+          runs.unshift({
+            head_sha: command(work, "rev-parse", `origin/${ref}`),
+            head_branch: ref,
+            conclusion: null,
+          });
         },
       },
       issues: {
@@ -115,6 +126,7 @@ function fixture() {
     addNightly,
     calls,
     comments,
+    runs,
     counts: () => ({ creates, dispatches }),
     cleanup: () => {
       process.chdir(original);
@@ -163,6 +175,48 @@ test("conflicts leave the remote untouched and preserve a patch and report", asy
     assert.ok(fs.readFileSync("codeup-sync-conflict.patch", "utf8").includes("shared.txt"));
     assert.equal(f.comments[0].issue_number, 15);
     assert.deepEqual(f.counts(), { creates: 0, dispatches: 0 });
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("retries a failed dispatch without opening another PR", async () => {
+  const f = fixture();
+  try {
+    f.addNightly(1);
+    const dispatch = f.github.rest.actions.createWorkflowDispatch;
+    f.github.rest.actions.createWorkflowDispatch = async () => {
+      throw Error("dispatch unavailable");
+    };
+    await assert.rejects(sync({ ...f, context, core }), /dispatch unavailable/);
+    f.github.rest.actions.createWorkflowDispatch = dispatch;
+    await sync({ ...f, context, core });
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 1 });
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("automatic merge waits for successful CI and explicitly dispatches the merged commit", async () => {
+  const f = fixture();
+  try {
+    f.addNightly(1);
+    let merges = 0;
+    f.github.rest.pulls.merge = async ({ sha }) => {
+      merges++;
+      assert.equal(sha, f.run("rev-parse", "HEAD"));
+      f.run("push", "origin", "HEAD:codeup-integration");
+      return { data: { merged: true, sha } };
+    };
+    await sync({ ...f, context, core, autoMerge: true });
+    assert.equal(merges, 0);
+    f.runs[0].conclusion = "success";
+    await sync({ ...f, context, core, autoMerge: true });
+    assert.equal(merges, 1);
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 2 });
+    assert.equal(f.runs[0].head_branch, "codeup-integration");
+    await sync({ ...f, context, core, autoMerge: true });
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 2 });
   } finally {
     f.cleanup();
   }

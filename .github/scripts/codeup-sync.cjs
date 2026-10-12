@@ -7,6 +7,24 @@ const BASE = "codeup-integration";
 const BRANCH = "sync/upstream-nightly";
 const MARKER = "<!-- codeup-nightly-sync -->";
 
+async function ensureCi(github, sha, ref) {
+  const { data } = await github.rest.actions.listWorkflowRuns({
+    ...REPOSITORY,
+    workflow_id: "codeup-ci.yml",
+    head_sha: sha,
+    branch: ref,
+    per_page: 100,
+  });
+  const existing = data.workflow_runs[0];
+  if (!existing)
+    await github.rest.actions.createWorkflowDispatch({
+      ...REPOSITORY,
+      workflow_id: "codeup-ci.yml",
+      ref,
+    });
+  return existing;
+}
+
 function latestNightly(releases) {
   return releases
     .filter(
@@ -68,6 +86,8 @@ async function sync({ github, context, core, run = git, dryRun = false, autoMerg
     }
   };
   if (contains(`origin/${BASE}`, commit.sha)) {
+    // Recover a dispatch failure after a token-authenticated merge (which emits no push run).
+    if (autoMerge && !dryRun) await ensureCi(github, run("rev-parse", `origin/${BASE}`), BASE);
     core.info("The integration branch already contains this Nightly; no PR or build needed.");
     return { status: "current", tag: nightly.tag_name };
   }
@@ -104,7 +124,7 @@ async function sync({ github, context, core, run = git, dryRun = false, autoMerg
       fs.writeFileSync("codeup-sync-conflict.patch", run("diff"));
       run("merge", "--abort");
       await reportConflict({ github, number: pr?.number ?? 15, tag: nightly.tag_name, paths });
-      throw Error(`Nightly merge conflicts: ${paths.join(", ")}`);
+      throw Error(`Nightly merge conflicts: ${paths.join(", ")}`, { cause: error });
     }
   }
   fs.writeFileSync(
@@ -126,17 +146,22 @@ async function sync({ github, context, core, run = git, dryRun = false, autoMerg
   if (pr && (changed || pr.title !== title))
     await github.rest.pulls.update({ ...REPOSITORY, pull_number: pr.number, title, body });
   // GITHUB_TOKEN-created PRs do not trigger pull_request workflows.
-  if (changed || !pr)
-    await github.rest.actions.createWorkflowDispatch({
-      ...REPOSITORY,
-      workflow_id: "codeup-ci.yml",
-      ref: BRANCH,
-    });
-  if (autoMerge && !current.auto_merge) {
-    await github.graphql(
-      "mutation($id:ID!){ enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:MERGE}){pullRequest{number}} }",
-      { id: current.node_id },
-    );
+  const ci = await ensureCi(github, sha, BRANCH);
+  if (autoMerge && ci?.conclusion === "success") {
+    // The merge API enforces branch protection; a matching SHA prevents merging a newer push.
+    try {
+      const { data: merged } = await github.rest.pulls.merge({
+        ...REPOSITORY,
+        pull_number: current.number,
+        sha,
+        merge_method: "merge",
+      });
+      if (!merged.merged) throw Error(merged.message);
+      await ensureCi(github, merged.sha, BASE);
+    } catch (error) {
+      if (error.status !== 405 && error.status !== 409) throw error;
+      core.info(`Automatic merge is waiting for branch protection: ${error.message}`);
+    }
   }
   core.info(`Single sync PR: ${current.html_url} (${changed ? "updated" : "unchanged"})`);
   return { status: changed || !pr ? "updated" : "unchanged", number: current.number, sha };
