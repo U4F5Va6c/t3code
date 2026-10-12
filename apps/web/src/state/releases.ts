@@ -7,6 +7,7 @@ import {
 import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Tracer from "effect/Tracer";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { AsyncResult, Atom } from "effect/reactivity";
 
@@ -44,7 +45,10 @@ const releasePublishedAtom = Atom.family((version: string) =>
       return typeof body === "object" && body !== null && "version" in body
         ? body.version === version
         : false;
-    }).pipe(Effect.provide(FetchHttpClient.layer)),
+    }).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provideService(Tracer.DisablePropagation, true),
+    ),
   ).pipe(
     Atom.withRefresh("5 minutes"),
     Atom.keepAlive,
@@ -71,7 +75,10 @@ const codeupReleaseAtom = Atom.make(
     );
     const releases = yield* decodeReleases(body);
     return newestCliReleaseVersion(releases, "codeup") ?? null;
-  }).pipe(Effect.provide(FetchHttpClient.layer)),
+  }).pipe(
+    Effect.provide(FetchHttpClient.layer),
+    Effect.provideService(Tracer.DisablePropagation, true),
+  ),
 ).pipe(Atom.withRefresh("5 minutes"), Atom.keepAlive);
 
 const NO_CODEUP_RELEASE = Atom.make(AsyncResult.success<string | null>(null));
