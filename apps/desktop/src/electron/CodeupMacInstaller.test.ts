@@ -137,7 +137,7 @@ describe("Codeup Mac installer", () => {
   );
 
   it.effect(
-    "waits for the captured parent to exit, replaces only that app and retains a backup",
+    "recovers an abandoned lock, excludes concurrent installs and retains the previous app",
     () =>
       Effect.gen(function* () {
         if ((yield* HostProcess.Platform) !== "darwin") return;
@@ -145,6 +145,9 @@ describe("Codeup Mac installer", () => {
         yield* Effect.promise(async () => {
           const f = await fixture(architecture);
           const prepared = await prepareCodeupMacInstall(f.input);
+          const concurrent = await prepareCodeupMacInstall(f.input);
+          // An interrupted installer can leave the inode, but cannot keep the kernel lock.
+          await NodeFSP.writeFile(prepared.lock, "");
           const parent = NodeChildProcess.spawn("/bin/cat", [], {
             stdio: ["pipe", "ignore", "ignore"],
           });
@@ -159,6 +162,10 @@ describe("Codeup Mac installer", () => {
               helper.once("error", reject);
               helper.once("exit", resolve);
             });
+            await expect(
+              launchCodeupMacInstall(concurrent, parent.pid!, NodePath.join(f.root, "second.log")),
+            ).rejects.toThrow("Could not start the installer");
+            await expect(NodeFSP.access(concurrent.work)).rejects.toMatchObject({ code: "ENOENT" });
             expect(
               await NodeFSP.readFile(NodePath.join(f.appPath, "Contents", "Info.plist"), "utf8"),
             ).toContain(oldVersion);
@@ -174,7 +181,8 @@ describe("Codeup Mac installer", () => {
                 "utf8",
               ),
             ).toContain(oldVersion);
-            await expect(NodeFSP.access(prepared.lock)).rejects.toMatchObject({ code: "ENOENT" });
+            await execute("/usr/bin/lockf", ["-k", "-t", "0", prepared.lock, "/usr/bin/true"]);
+            await expect(NodeFSP.access(prepared.work)).rejects.toMatchObject({ code: "ENOENT" });
           } finally {
             parent.stdin?.end();
           }
@@ -219,7 +227,8 @@ describe("Codeup Mac installer", () => {
             expect(
               await NodeFSP.readFile(NodePath.join(f.appPath, "Contents", "Info.plist"), "utf8"),
             ).toContain(oldVersion);
-            await expect(NodeFSP.access(prepared.lock)).rejects.toMatchObject({ code: "ENOENT" });
+            await execute("/usr/bin/lockf", ["-k", "-t", "0", prepared.lock, "/usr/bin/true"]);
+            await expect(NodeFSP.access(prepared.work)).rejects.toMatchObject({ code: "ENOENT" });
           } finally {
             parent.stdin?.end();
           }

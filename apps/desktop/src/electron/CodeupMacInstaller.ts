@@ -28,8 +28,11 @@ app="$2"
 staged="$3"
 backup="$4"
 work="$5"
-lock="$6"
-trap '/bin/rmdir "$lock" 2>/dev/null || true' EXIT
+expected_version="$6"
+cleanup_work=1
+trap 'if [ "$cleanup_work" -eq 1 ]; then /bin/rm -rf "$work"; fi' EXIT
+echo ready >&3
+exec 3>&-
 attempt=0
 while /bin/kill -0 "$parent_pid" 2>/dev/null; do
   attempt=$((attempt + 1))
@@ -39,20 +42,31 @@ while /bin/kill -0 "$parent_pid" 2>/dev/null; do
   fi
   /bin/sleep 1
 done
+if [ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")" != "$expected_version" ]; then
+  echo 'The installed app changed; no application was replaced.'
+  exit 1
+fi
+if [ -e "$backup" ]; then
+  test ! -L "$backup"
+  test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$backup/Contents/Info.plist")" = '${CODEUP_PREVIEW.appId}'
+  /bin/rm -rf "$backup"
+fi
 restore() {
   echo 'Installation failed; restoring the previous app.'
   if [ -d "$backup" ]; then
     if [ -e "$app" ]; then /bin/mv "$app" "$work/failed.app"; fi
     /bin/mv "$backup" "$app"
   fi
+  cleanup_work=1
   /usr/bin/open -n "$app" || true
   /usr/bin/osascript -e 'display alert "Codeup Preview update failed" message "The previous app was restored. Download the latest DMG from the Codeup release page and try again."' || true
   exit 1
 }
+cleanup_work=0
 /bin/mv "$app" "$backup" || restore
 /bin/mv "$staged" "$app" || restore
 /usr/bin/open -n "$app" || restore
-/bin/rm -rf "$work"
+cleanup_work=1
 `;
 
 async function bundleValue(appPath: string, key: string): Promise<string> {
@@ -82,7 +96,6 @@ export async function prepareCodeupMacInstall(input: {
 }) {
   let step = "reading the downloaded update";
   let work: string | undefined;
-  let lock: string | undefined;
   try {
     const download = decodeDownload(input.download);
     const appPath = /^(.+\.app)\/Contents\/MacOS\/[^/]+$/.exec(input.executable)?.[1];
@@ -113,10 +126,8 @@ export async function prepareCodeupMacInstall(input: {
       throw new CodeupMacInstallError("The installed app changed. Restart it before updating.");
     }
     const parent = NodePath.dirname(appPath);
-    const lockPath = NodePath.join(parent, ".t3-codeup-install-lock");
-    step = "locking the writable application folder (another installation may be running)";
-    await NodeFSP.mkdir(lockPath, { mode: 0o700 });
-    lock = lockPath;
+    const lock = NodePath.join(parent, ".t3-codeup-install.lock");
+    step = "staging the update in the writable application folder";
     work = await NodeFSP.mkdtemp(NodePath.join(parent, ".t3-codeup-install-"));
 
     step = "verifying the downloaded archive checksum";
@@ -177,14 +188,12 @@ export async function prepareCodeupMacInstall(input: {
       )
     ) {
       await requirePreviewBundle(backup);
-      await NodeFSP.rm(backup, { recursive: true });
     }
     const script = NodePath.join(work, "install.sh");
     await NodeFSP.writeFile(script, CODEUP_MAC_INSTALL_SCRIPT, { mode: 0o700 });
-    return { appPath, staged, backup, work, lock, script };
+    return { appPath, staged, backup, work, lock, script, currentVersion: input.currentVersion };
   } catch (cause) {
     if (work) await NodeFSP.rm(work, { recursive: true, force: true }).catch(() => {});
-    if (lock) await NodeFSP.rmdir(lock).catch(() => {});
     if (cause instanceof CodeupMacInstallError) throw cause;
     throw new CodeupMacInstallError(
       `Could not finish ${step}. The installed app is unchanged. Try the release DMG.`,
@@ -205,31 +214,40 @@ export async function launchCodeupMacInstall(
     const logFd = log.fd;
     return await new Promise<NodeChildProcess.ChildProcess>((resolve, reject) => {
       const child = NodeChildProcess.spawn(
-        "/bin/sh",
+        // The kernel releases this lock after a crash; keep its inode for concurrent installers.
+        "/usr/bin/lockf",
         [
+          "-k",
+          "-t",
+          "0",
+          prepared.lock,
+          "/bin/sh",
           prepared.script,
           String(parentPid),
           prepared.appPath,
           prepared.staged,
           prepared.backup,
           prepared.work,
-          prepared.lock,
+          prepared.currentVersion,
         ],
         {
           detached: true,
-          stdio: ["ignore", logFd, logFd],
+          stdio: ["ignore", logFd, logFd, "pipe"],
           cwd: NodePath.dirname(prepared.appPath),
         },
       );
       child.once("error", reject);
-      child.once("spawn", () => {
+      const earlyExit = () => reject(new Error("Installer exited before acquiring the lock"));
+      child.once("exit", earlyExit);
+      child.stdio[3]!.once("data", () => {
+        child.removeListener("exit", earlyExit);
+        child.stdio[3]!.destroy();
         child.unref();
         resolve(child);
       });
     });
   } catch (cause) {
     await NodeFSP.rm(prepared.work, { recursive: true, force: true }).catch(() => {});
-    await NodeFSP.rmdir(prepared.lock).catch(() => {});
     throw new CodeupMacInstallError(
       "Could not start the installer. The installed app is unchanged. Try the release DMG.",
       { cause },
