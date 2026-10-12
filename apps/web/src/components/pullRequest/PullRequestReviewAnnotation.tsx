@@ -1,3 +1,4 @@
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 /**
  * Pull-request-specific annotations: conversations already on the host and comments queued for
  * the review being written. New comment composition uses the shared diff annotation.
@@ -284,7 +285,10 @@ export function ReviewThreadCard({
             {comments.map((comment) => (
               <article key={comment.id} className="group min-w-0">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <PullRequestActorLabel actor={comment.author} />
+                  <PullRequestActorLabel
+                    provider={sourceControlClients.findByPublicHost(reference.host ?? "")?.kind}
+                    actor={comment.author}
+                  />
                   <span>{formatRelativeTimeLabel(comment.createdAt)}</span>
                   <PullRequestReactionBar
                     className="ml-auto justify-end"

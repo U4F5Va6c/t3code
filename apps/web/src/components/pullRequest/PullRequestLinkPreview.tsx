@@ -1,3 +1,8 @@
+import {
+  sourceControlActorLabel,
+  sourceControlRepositoryLabel,
+  sourceControlClients,
+} from "@t3tools/client-runtime/source-control-clients";
 import type { PreviewCard as PreviewCardPrimitive } from "@base-ui/react/preview-card";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, PullRequestRef } from "@t3tools/contracts";
@@ -92,11 +97,13 @@ export function PullRequestLinkPreview({
       ? null
       : resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft });
   const authorLabel =
-    detail?.author === null
-      ? "ghost"
-      : detail?.author.name && detail.author.name !== detail.author.login
-        ? `${detail.author.name} (@${detail.author.login})`
-        : (detail?.author.login ?? null);
+    detail?.author && sourceControlClients.get(detail.provider).actorLabel
+      ? sourceControlActorLabel(detail.provider, detail.author)
+      : detail?.author === null
+        ? "ghost"
+        : detail?.author.name && detail.author.name !== detail.author.login
+          ? `${detail.author.name} (@${detail.author.login})`
+          : (detail?.author.login ?? null);
 
   return (
     <PreviewCard open={open} onOpenChange={setOpen} actionsRef={previewActionsRef}>
@@ -122,7 +129,9 @@ export function PullRequestLinkPreview({
             ) : (
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
-                  <span className="min-w-0 truncate">{detail.repository}</span>
+                  <span className="min-w-0 truncate">
+                    {sourceControlRepositoryLabel(detail.provider, detail.repository)}
+                  </span>
                   <span className="shrink-0">#{detail.number}</span>
                   <span aria-hidden>·</span>
                   {state === null ? null : (

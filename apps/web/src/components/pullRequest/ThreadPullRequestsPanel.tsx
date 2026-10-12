@@ -1,6 +1,7 @@
 import type { ProjectId, ScopedThreadRef, ThreadPullRequestLink } from "@t3tools/contracts";
 import {
   sourceControlClients,
+  sourceControlRepositoryLabel,
   UNKNOWN_SOURCE_CONTROL_CLIENT,
 } from "@t3tools/client-runtime/source-control-clients";
 import {
@@ -106,6 +107,8 @@ function LinkRow({
   );
   const { link, depth, stack } = line;
   const snapshot = link.snapshot;
+  const provider = sourceControlClients.findByChangeRequestUrl(link.url)?.kind;
+  const repositoryLabel = sourceControlRepositoryLabel(provider, link.repository);
   const open = snapshot === null || snapshot.state === "open";
   const watching = link.watch !== undefined;
   // A link carries no host summary, so the host's own definition says what it can do.
@@ -226,6 +229,7 @@ function LinkRow({
               {snapshot?.author ? (
                 <PullRequestRowAuthor
                   actor={snapshot.author}
+                  provider={provider}
                   className="shrink-0"
                   labelClassName="max-w-28"
                 />
@@ -236,7 +240,7 @@ function LinkRow({
                       end, which a tail cut would hide. */}
                   <Tooltip>
                     <TooltipTrigger render={<span className="flex min-w-0 max-w-32 font-mono" />}>
-                      <MiddleTruncate value={link.repository} showTitle={false} />
+                      <MiddleTruncate value={repositoryLabel} showTitle={false} />
                     </TooltipTrigger>
                     <TooltipPopup>{link.repository}</TooltipPopup>
                   </Tooltip>
@@ -244,7 +248,7 @@ function LinkRow({
                 </>
               ) : (
                 <span className="truncate font-mono">
-                  {link.host}/{link.repository}
+                  {link.host}/{repositoryLabel}
                 </span>
               )}
             </>

@@ -1,5 +1,8 @@
 import type { PullRequestAction } from "@t3tools/contracts";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import {
+  sourceControlClients,
+  sourceControlRepositoryLabel,
+} from "@t3tools/client-runtime/source-control-clients";
 import { SearchIcon } from "lucide-react";
 import { PullRequestStackPopover } from "./PullRequestStackPopover";
 import {
@@ -247,10 +250,18 @@ function PullRequestRowImpl({
               ) : null}
               <PullRequestRowAuthor
                 actor={entry.author}
+                provider={entry.provider}
                 className="min-w-3.5 max-w-40"
                 labelClassName="sr-only @xs/pr-row-meta:not-sr-only @xs/pr-row-meta:truncate"
               />
-              {showProjectTitle ? <span className="truncate">{entry.repository}</span> : null}
+              {showProjectTitle ? (
+                <Tooltip>
+                  <TooltipTrigger render={<span className="truncate" />}>
+                    {sourceControlRepositoryLabel(entry.provider, entry.repository)}
+                  </TooltipTrigger>
+                  <TooltipPopup>{entry.repository}</TooltipPopup>
+                </Tooltip>
+              ) : null}
               {environmentLabel ? (
                 <span className="min-w-0 max-w-32 truncate">{environmentLabel}</span>
               ) : null}

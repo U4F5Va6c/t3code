@@ -14,7 +14,7 @@ import {
   makeSourceControlClientRegistry,
   readSourceControlHostSettings,
 } from "@t3tools/source-control-core/client/definition";
-import type { ServerSettings } from "@t3tools/contracts";
+import type { PullRequestActor, ServerSettings } from "@t3tools/contracts";
 
 export {
   UNKNOWN_SOURCE_CONTROL_CLIENT,
@@ -46,6 +46,17 @@ const BUILT_IN_SOURCE_CONTROL_CLIENTS = [
 export const sourceControlClients = makeSourceControlClientRegistry(
   BUILT_IN_SOURCE_CONTROL_CLIENTS,
 );
+
+export function sourceControlRepositoryLabel(kind: string | null | undefined, repository: string) {
+  return sourceControlClients.get(kind).repositoryLabel?.(repository) ?? repository;
+}
+
+export function sourceControlActorLabel(
+  kind: string | null | undefined,
+  actor: PullRequestActor | null,
+) {
+  return actor ? (sourceControlClients.get(kind).actorLabel?.(actor) ?? actor.login) : "ghost";
+}
 
 export type { GitHubSettings } from "@t3tools/source-control-github/client/definition";
 

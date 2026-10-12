@@ -10,6 +10,7 @@ import type { ClientSettings } from "@t3tools/contracts/settings";
 
 import type { EnvironmentProject } from "./models.ts";
 import { normalizeProjectPathForComparison } from "./projects.ts";
+import { sourceControlRepositoryLabel } from "../sourceControlClients.ts";
 
 export interface ProjectGroupingSettings {
   readonly sidebarProjectGroupingMode: SidebarProjectGroupingMode;
@@ -179,7 +180,10 @@ export function deriveProjectGroupLabel(input: {
     return sharedTitle;
   }
   if (sharedDisplayNames.length === 1) {
-    return sharedDisplayNames[0]!;
+    return sourceControlRepositoryLabel(
+      input.representative.repositoryIdentity?.provider,
+      sharedDisplayNames[0]!,
+    );
   }
 
   if (sharedRepositoryNames.length === 1) {
@@ -319,7 +323,14 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
               representative,
               members: members.map((member) => member.project),
             })
-          : representative.title,
+          : representative.repositoryIdentity &&
+              representative.title ===
+                repositoryGroupingDisplayNameOf(representative.repositoryIdentity)
+            ? sourceControlRepositoryLabel(
+                representative.repositoryIdentity.provider,
+                representative.title,
+              )
+            : representative.title,
       representative,
       members,
       memberProjectRefs: projectRefsByLogicalKey.get(key) ?? [],

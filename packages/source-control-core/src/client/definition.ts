@@ -13,6 +13,7 @@
  */
 import {
   type PullRequestAction,
+  type PullRequestActor,
   pullRequestHostOf,
   type PullRequestReviewVerdict,
   type RepositoryIdentity,
@@ -66,6 +67,9 @@ export interface SourceControlClientDefinition {
   readonly changeRequest: ChangeRequestTerminology;
   /** Placeholder for a repository path on this host, such as `owner/repo`. */
   readonly repositoryPathHint: string;
+  /** Display only; repository selectors and actor logins retain their host-native identities. */
+  readonly repositoryLabel?: (repository: string) => string;
+  readonly actorLabel?: (actor: PullRequestActor) => string;
   /**
    * The hostname a change request reference can be attributed to before any repository
    * identity is known, or null when a hostname alone does not name this host.

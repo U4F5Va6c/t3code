@@ -40,6 +40,11 @@ export const definition = defineSourceControlClient({
   icon: "change-request",
   changeRequest: { shortLabel: "MR", singular: "merge request" },
   repositoryPathHint: "organization-id/group/repository",
+  repositoryLabel: (repository) => {
+    const parsed = parseCodeupRepository(repository);
+    return parsed ? parsed.repository.slice(parsed.organizationId.length + 1) : repository;
+  },
+  actorLabel: (actor) => actor.name?.trim() || actor.login,
   publicHost: CODEUP_HOST,
   publishDescription: "Codeup Central Edition",
   publishHost: () => CODEUP_HOST,

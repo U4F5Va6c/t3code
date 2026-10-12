@@ -87,6 +87,38 @@ const repositoryIdentity = {
   displayName: "T3 Code",
 };
 
+it("shortens Codeup project labels without merging organizations or overwriting custom titles", () => {
+  const project = (org: string, id = org) =>
+    makeProject(id, `/work/${id}`, {
+      title: `${org}/team/repo`,
+      repositoryIdentity: {
+        ...repositoryIdentity,
+        provider: "codeup",
+        owner: `${org}/team`,
+        name: "repo",
+        displayName: `${org}/team/repo`,
+        canonicalKey: `codeup.aliyun.com/${org}/team/repo`,
+      },
+    });
+  const first = project("org-a");
+  const second = project("org-b");
+  const groups = buildProjectGroups({
+    projects: [first, project("org-a", "clone"), second],
+    settings: settings("repository"),
+  });
+  expect(groups).toHaveLength(2);
+  expect(groups.map((group) => group.label)).toEqual(["team/repo", "team/repo"]);
+  expect(groups[0]?.members).toHaveLength(2);
+  expect(groups[0]?.key).not.toBe(groups[1]?.key);
+  expect(first.repositoryIdentity?.displayName).toBe("org-a/team/repo");
+  expect(
+    buildProjectGroups({
+      projects: [{ ...first, title: "My project" }],
+      settings: settings("repository"),
+    })[0]?.label,
+  ).toBe("My project");
+});
+
 function makeProject(
   id: string,
   workspaceRoot: string,
