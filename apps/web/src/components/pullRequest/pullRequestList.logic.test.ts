@@ -55,7 +55,7 @@ import {
 const VIEWERS = { "github.com": "Bilal" } as const;
 const NO_VIEWERS = {} as const;
 
-it("shows and searches a Codeup author name while filtering involvement by its ID", () => {
+it("labels a Codeup author by name while filtering involvement by its ID", () => {
   const mr = entry({
     number: 1,
     provider: SourceControlProviderKind.make("codeup"),
@@ -67,8 +67,6 @@ it("shows and searches a Codeup author name while filtering involvement by its I
   const facet = collectPullRequestListFacets([mr], "open").authors[0];
   expect(facet?.label).toBe("张三");
   expect(facet?.actor.login).toBe("user-id");
-  expect(matchesPullRequestQuery(mr, "张三")).toBe(true);
-  expect(scorePullRequestMatch(mr, "张三")).toBe(50);
   expect(filterPullRequestsByInvolvement([mr], {}, "authored")).toEqual([mr]);
   expect(
     filterPullRequestsByInvolvement([{ ...mr, viewer: "someone-else" }], {}, "authored"),

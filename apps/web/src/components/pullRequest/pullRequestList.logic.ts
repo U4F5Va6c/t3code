@@ -318,7 +318,7 @@ export function parsePullRequestQuery(raw: string): {
 export function matchesPullRequestQuery(entry: PullRequestListEntry, query: string): boolean {
   const normalizedQuery = query.trim().toLowerCase();
   if (normalizedQuery.length === 0) return true;
-  return `#${entry.number} ${entry.title} ${entry.repository} ${entry.headBranch} ${entry.author?.login ?? ""} ${entry.author?.name ?? ""}`
+  return `#${entry.number} ${entry.title} ${entry.repository} ${entry.headBranch} ${entry.author?.login ?? ""}`
     .toLowerCase()
     .includes(normalizedQuery);
 }
@@ -988,11 +988,7 @@ export function scorePullRequestMatch(entry: PullRequestListEntry, query: string
   // Every word, in any order: "wizard welcome" is still about the welcome wizard.
   if (terms.length > 1 && terms.every((term) => title.includes(term))) return 70;
   if (entry.headBranch.toLowerCase().includes(needle)) return 60;
-  if (
-    (entry.author?.login ?? "").toLowerCase().includes(needle) ||
-    (entry.author?.name ?? "").toLowerCase().includes(needle)
-  )
-    return 50;
+  if ((entry.author?.login ?? "").toLowerCase().includes(needle)) return 50;
   if (entry.repository.toLowerCase().includes(needle)) return 40;
   if (terms.some((term) => title.includes(term))) return 30;
   // The host matched something this row does not show — a description, a comment, a commit.
