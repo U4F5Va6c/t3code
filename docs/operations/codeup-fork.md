@@ -2,7 +2,7 @@
 
 本 Fork：<https://github.com/U4F5Va6c/t3code>。上游：<https://github.com/pingdotgg/t3code>。
 
-Codeup 原生适配已同步至 2026-10-12 的上游 `48595c78`，覆盖本期 Source Control 与 MR 客户端验收；ProjeX 原生管理与 iOS 安装包暂缓。实际可验收提交和制品以 Fork PR 的 Codeup CI 为准。
+Codeup 原生适配已同步至官方 `v0.0.46-nightly.20261012.3010`（上游 `d83929ad0b`），覆盖本期 Source Control 与 MR 客户端验收；ProjeX 原生管理与 iOS 安装包暂缓。实际可验收提交和制品以 Fork PR 的 Codeup CI 为准。
 
 按用户 2026-10-10 的决定，本期保留 Web/桌面原生集成，并优先确保目标机器上的 Agent 通过 `codeup` Skill 和 CLI/MCP 操作平台工作项与仓库。iOS/手机端原生集成、个人签名、真机构建和移动发布暂缓，不作为开发、发布或结项前提。当前范围与验收以 [总需求 #1](https://github.com/U4F5Va6c/t3code/issues/1) 和 [客户端验收 #8](https://github.com/U4F5Va6c/t3code/issues/8) 为准。
 
@@ -13,7 +13,7 @@ Codeup 原生适配已同步至 2026-10-12 的上游 `48595c78`，覆盖本期 S
 - `main` 保持上游主线，不放定制提交；`codeup-integration` 是长期集成分支。
 - 功能分支从 `codeup-integration` 创建。Codeup Provider、ProjeX 与发布分别保持清楚的提交边界。
 
-每周或遇到需要的上游修复时同步。先确保工作区干净，记录当前 Fork 提交，再执行：
+跟进官方**已发布的 Nightly tag**；不要把未发布的 `main` 提交或仅修改版本号当成同步。持续检查、可选自动合并和 CI 发布由 [#15](https://github.com/U4F5Va6c/t3code/issues/15) 跟踪。人工同步先确保工作区干净，记录当前 Fork 提交，确认本次 Nightly tag，再执行：
 
 ```sh
 git fetch upstream --prune
@@ -24,12 +24,12 @@ git push origin main
 git switch codeup-integration
 git pull --ff-only origin codeup-integration
 git switch -c sync/upstream-YYYYMMDD
-git merge --no-ff upstream/main
+git merge --no-ff <official-nightly-tag>
 ```
 
-`YYYYMMDD` 换成本次日期，分支已存在时选新名称。第一次发布集成分支前不执行其 `git pull`。发生冲突时逐项处理；放弃本轮同步用 `git merge --abort`。不要用 `reset --hard` 或强推覆盖共享分支。
+`YYYYMMDD` 换成本次日期，`<official-nightly-tag>` 换成已确认的官方 Nightly tag；分支已存在时选新名称。第一次发布集成分支前不执行其 `git pull`。发生冲突时逐项处理；放弃本轮同步用 `git merge --abort`。不要用 `reset --hard` 或强推覆盖共享分支。
 
-同步分支完成相关测试、类型检查和手动验收后，再通过 Fork 内部 PR 以 Merge Commit 方式合入 `codeup-integration`，不 Squash。该分支受保护：必须经 PR 且 Codeup CI 通过，管理员同样不能直接推送或强推。合入后运行 `gh api repos/U4F5Va6c/t3code/actions/workflows --paginate -q '.workflows[]|select(.state=="active")|.path'`，除 `codeup-ci.yml` 外的新增上游工作流立即禁用。PR 目标不要误选上游仓库。只有明确要贡献上游时才另开上游 PR。
+同步分支完成相关测试、类型检查和手动验收后，再通过 Fork 内部 PR 以 Merge Commit 方式合入 `codeup-integration`，不 Squash。该分支受保护：必须经 PR 且 Codeup CI 通过，管理员同样不能直接推送或强推。合入后运行 `gh api repos/U4F5Va6c/t3code/actions/workflows --paginate -q '.workflows[]|select(.state=="active")|.path'`，除显式维护的 Fork 工作流外，新增上游工作流立即禁用。PR 目标不要误选上游仓库。只有明确要贡献上游时才另开上游 PR。
 
 ## 独立 Source Control 的边界
 
@@ -67,19 +67,19 @@ vp run dev --home-dir "$PWD/.t3-codeup-dev"
 
 Fork 只运行 `.github/workflows/codeup-ci.yml`：`codeup-integration` 的 PR 与推送执行上游同款 lint、typecheck 及 Source Control 相关包测试，使用 GitHub 托管 runner。上游工作流依赖 `blacksmith-*` runner 和发布 secrets，在 Fork 中全部手动禁用；默认 `GITHUB_TOKEN` 只读。web 与 server 大套件按根 AGENTS.md 在本地定向运行。不要导入上游生产 secrets。
 
-## macOS 隔离验收包
+## macOS Codeup Preview
 
-指向 `codeup-integration` 的 PR 由 Codeup CI 构建 Apple Silicon（arm64）和 Intel（x64）DMG。
+指向 `codeup-integration` 的 PR 由 Codeup CI 构建 Apple Silicon（arm64）和 Intel（x64）DMG，以及 Mac arm64、Linux x64 独立后端。版本复用上游 Nightly 的基础版本推导规则，使用 `X.Y.Z-codeup.<日期>.<CI 运行号>`；同一运行的桌面、Web 与服务端使用相同版本和提交。图标、启动素材和星空背景复用 Nightly，应用身份保持独立。
 在该 PR 的 Actions 运行中下载对应 `codeup-preview-macos-*` artifact，解压后核对
 `COMMIT.txt` 与 PR head、`SHA256SUMS.txt` 与 DMG。制品保留 30 天。
 
 安装为 **T3 Code (Codeup Preview).app**，可与原版同时存在：
 
 - Bundle ID：`io.github.u4f5va6c.t3code.codeup-preview`。
-- Chromium 配置：`~/Library/Application Support/t3code-codeup-preview`，不迁移原版设置。
+- Chromium 配置：`~/Library/Application Support/t3code-codeup-preview`，不与原版共用运行中的 profile；主题和字体等设备偏好可通过设置对齐。
 - 服务端数据：`~/.t3-codeup-preview`；忽略继承的 `T3CODE_HOME` 和固定端口配置。
 - 专用协议：`t3code-codeup-preview://`，不接管原版链接和默认浏览器。
-- 禁用自动更新；下一次验收下载新的 PR 制品。
+- 当前仍禁用自动更新；更新通过安装新的 Fork 制品完成。客户端更新与 Connections 后端升级分别由 #16、#17 跟踪，不能仅取消禁用开关就接入官方更新源。
 
 应用使用 ad-hoc 本地签名，CI 会挂载最终 DMG 校验签名并启动包内 Electron；没有 Developer ID 签名或 Apple 公证。
 首次打开可能需要在 macOS **系统设置 → 隐私与安全性** 中允许打开；
@@ -130,8 +130,8 @@ Release 包内嵌 JS，不需要 Metro 常驻；`ios:dev` 是迭代调试方式�
 
 ## 发布、更新与回退
 
-1. 从验证过的同一个集成提交构建 server、Web 和桌面，记录上游 SHA、Fork SHA、Skill 版本、工具链与构建结果；版本标签使用 `codeup-vX.Y.Z`。本期不构建移动制品。
-2. 桌面设置自己的 app ID、名称、数据目录、签名及更新来源。开发阶段可设置 `T3CODE_DISABLE_AUTO_UPDATE=true`；正式制品将 `T3CODE_DESKTOP_UPDATE_REPOSITORY` 指向自己的发布仓库。不要让 Fork 更新器覆盖官方版本或反过来覆盖 Fork。
+1. 从验证过的同一个集成提交构建 server、Web 和桌面，记录上游 SHA、Fork SHA、Skill 版本、工具链与构建结果；版本标签使用 `vX.Y.Z-codeup.<日期>.<CI 运行号>`。本期不构建移动制品。
+2. 桌面设置自己的 app ID、名称、数据目录、签名及更新来源。开发阶段可设置 `T3CODE_DISABLE_AUTO_UPDATE=true`；后续启用在线更新时必须同时提供 Fork 更新清单、安装制品、签名和独立频道，仅设置 `T3CODE_DESKTOP_UPDATE_REPOSITORY` 不足以让当前预览包自动更新。不要让 Fork 更新器覆盖官方版本或反过来覆盖 Fork。
 3. 先在独立 environment 验证认证、仓库识别、工作项关联、MR 评审与 CI，再升级日常环境。升级前停止该 environment 并备份其数据；数据库迁移后不能假设旧程序能直接读新数据库。
 4. 验证目标环境中的 Codex/Claude Code 能通过所配置的 Skill 与 CLI/MCP 完成平台操作和回读，远程断线后可以恢复；不以手机安装自签 App 为前提。
 5. 回退使用上一套配对构建和必要的数据备份。Git 提交回退不能代替数据回退。

@@ -36,6 +36,7 @@ import {
   InvalidMockUpdateServerPortError,
   UnsupportedDesktopBuildArchitectureError,
   isMacPasskeySigningConfigurationError,
+  isDesktopPreviewVersion,
   LinuxIconResizeError,
   LinuxDesktopBuildPrerequisitesMissingError,
   MacDesktopBuildPrerequisitesMissingError,
@@ -294,6 +295,17 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("switches the bundled splash and favicon branding for nightly versions", () => {
     assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "production");
     assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
+  });
+
+  it("reuses nightly artwork for Codeup without enabling an updater feed", () => {
+    const version = "0.0.46-codeup.20261012.15";
+    assert.deepStrictEqual(
+      resolveDesktopBuildIconAssets(version),
+      resolveDesktopBuildIconAssets("0.0.46-nightly.20261012.3010"),
+    );
+    assert.equal(resolveDesktopWebAssetBrand(version), "nightly");
+    assert.equal(resolveDesktopProductName(version), "T3 Code (Codeup Preview)");
+    assert.equal(isDesktopPreviewVersion(version), true);
   });
 
   it.effect("resolves GitHub desktop publish config from Effect config", () =>
