@@ -1,3 +1,4 @@
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { useAtomCommand } from "~/state/use-atom-command";
 /**
  * Asking someone to review, from the row that says who is already reviewing.
@@ -120,7 +121,11 @@ export function PullRequestReviewerPicker({
     >
       {(candidate) => (
         <>
-          <PullRequestActorLabel actor={candidate} className="flex-1" />
+          <PullRequestActorLabel
+            provider={sourceControlClients.findByPublicHost(reference.host ?? "")?.kind}
+            actor={candidate}
+            className="flex-1"
+          />
           {candidate.kind === "team" ? (
             <span className="shrink-0 text-muted-foreground">team</span>
           ) : null}

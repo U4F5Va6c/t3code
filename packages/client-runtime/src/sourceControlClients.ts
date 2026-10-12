@@ -9,11 +9,12 @@
  */
 import * as AzureDevOps from "@t3tools/source-control-azure-devops/client/definition";
 import * as Bitbucket from "@t3tools/source-control-bitbucket/client/definition";
+import * as Codeup from "@t3tools/source-control-codeup/client/definition";
 import {
   makeSourceControlClientRegistry,
   readSourceControlHostSettings,
 } from "@t3tools/source-control-core/client/definition";
-import type { ServerSettings } from "@t3tools/contracts";
+import type { PullRequestActor, ServerSettings } from "@t3tools/contracts";
 
 export {
   UNKNOWN_SOURCE_CONTROL_CLIENT,
@@ -38,12 +39,24 @@ const BUILT_IN_SOURCE_CONTROL_CLIENTS = [
   Forgejo.definition,
   Bitbucket.definition,
   AzureDevOps.definition,
+  Codeup.definition,
 ];
 
 /** `definitions` lists the built-in hosts in that order, for pickers that offer every host. */
 export const sourceControlClients = makeSourceControlClientRegistry(
   BUILT_IN_SOURCE_CONTROL_CLIENTS,
 );
+
+export function sourceControlRepositoryLabel(kind: string | null | undefined, repository: string) {
+  return sourceControlClients.get(kind).repositoryLabel?.(repository) ?? repository;
+}
+
+export function sourceControlActorLabel(
+  kind: string | null | undefined,
+  actor: PullRequestActor | null,
+) {
+  return actor ? (sourceControlClients.get(kind).actorLabel?.(actor) ?? actor.login) : "ghost";
+}
 
 export type { GitHubSettings } from "@t3tools/source-control-github/client/definition";
 

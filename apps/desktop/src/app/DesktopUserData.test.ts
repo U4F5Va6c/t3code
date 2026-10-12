@@ -71,3 +71,15 @@ it.effect.each(["t3code", "T3 Code (Alpha)"])(
       );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
+
+it.effect("Codeup Preview never imports or reuses the installed client's profile", () =>
+  resolveUserDataPath({
+    appDataDirectory: "/profiles",
+    platform: "darwin",
+    isDevelopment: false,
+    appVersion: "0.0.0-codeup.20261012.1",
+  }).pipe(
+    Effect.tap((path) => Effect.sync(() => assert.equal(path, "/profiles/t3code-codeup-preview"))),
+    Effect.provide(NodeServices.layer),
+  ),
+);

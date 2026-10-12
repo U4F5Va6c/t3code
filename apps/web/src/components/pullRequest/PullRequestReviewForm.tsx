@@ -50,6 +50,7 @@ const VERDICTS: ReadonlyArray<{
 export function PullRequestReviewForm({
   environmentId,
   reference,
+  headSha,
   verdicts,
   requestChangesSummaryRequired,
   textareaRef,
@@ -59,6 +60,7 @@ export function PullRequestReviewForm({
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
+  headSha: string | undefined;
   verdicts: ReadonlyArray<PullRequestReviewVerdict>;
   requestChangesSummaryRequired: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -67,6 +69,8 @@ export function PullRequestReviewForm({
   onSubmitted: () => void;
 }) {
   const [requestedVerdict, setRequestedVerdict] = useState<PullRequestReviewVerdict>("comment");
+  const [reviewedHeadSha, setReviewedHeadSha] = useState(headSha);
+  const headChanged = reviewedHeadSha !== headSha;
   const comments = usePendingReviewComments(reference);
   const reviewKey = pullRequestReviewKey(reference);
   // The panel stays mounted while the selected pull request changes. Keeping summaries beside
@@ -85,7 +89,7 @@ export function PullRequestReviewForm({
     offered.find((verdict) => verdict.value === requestedVerdict) ?? offered[0];
 
   const submit = async (verdict: (typeof VERDICTS)[number]) => {
-    if (pending) return;
+    if (pending || (headChanged && verdict.value !== "comment")) return;
     const submittedBody = body;
     const submittedComments = comments;
     onPendingChange(true);
@@ -93,6 +97,7 @@ export function PullRequestReviewForm({
       environmentId,
       input: {
         ...reference,
+        ...(reviewedHeadSha ? { expectedHeadSha: reviewedHeadSha } : {}),
         verdict: verdict.value,
         body: submittedBody,
         comments: submittedComments,
@@ -123,6 +128,19 @@ export function PullRequestReviewForm({
 
   return (
     <>
+      {headChanged && (
+        <div className="mb-2 space-y-2 text-xs text-muted-foreground">
+          <p>The branch changed. Review the latest diff before approving or requesting changes.</p>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={pending}
+            onClick={() => setReviewedHeadSha(headSha)}
+          >
+            I reviewed the latest changes
+          </Button>
+        </div>
+      )}
       <Textarea
         ref={textareaRef}
         rows={3}
@@ -162,7 +180,12 @@ export function PullRequestReviewForm({
         </Select>
         <Button
           size="xs"
-          disabled={pending || selectedVerdict === undefined || !canSubmit(selectedVerdict.value)}
+          disabled={
+            pending ||
+            selectedVerdict === undefined ||
+            !canSubmit(selectedVerdict.value) ||
+            (headChanged && selectedVerdict.value !== "comment")
+          }
           onClick={() => {
             if (selectedVerdict !== undefined) void submit(selectedVerdict);
           }}

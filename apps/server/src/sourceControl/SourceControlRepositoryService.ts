@@ -98,11 +98,13 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
           operation,
           provider,
           detail:
-            isSourceControlProviderError(cause) &&
-            cause.provider === "bitbucket" &&
-            isBitbucketRepositoryLocatorError(cause.cause)
-              ? BitbucketApi.BitbucketRepositoryLocatorError.detail
-              : "The source control operation could not be completed.",
+            isSourceControlProviderError(cause) && cause.provider === "codeup"
+              ? cause.detail
+              : isSourceControlProviderError(cause) &&
+                  cause.provider === "bitbucket" &&
+                  isBitbucketRepositoryLocatorError(cause.cause)
+                ? BitbucketApi.BitbucketRepositoryLocatorError.detail
+                : "The source control operation could not be completed.",
           cause,
         }),
   );

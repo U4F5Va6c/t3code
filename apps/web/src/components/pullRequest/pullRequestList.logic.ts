@@ -1,3 +1,4 @@
+import { sourceControlActorLabel } from "@t3tools/client-runtime/source-control-clients";
 import * as Schema from "effect/Schema";
 
 import {
@@ -50,6 +51,7 @@ export interface PullRequestGroup<Entry extends PullRequestListEntry = PullReque
 
 export interface PullRequestAuthorFacet {
   readonly actor: PullRequestActor;
+  readonly label: string;
   readonly count: number;
   readonly mergedCount: number;
 }
@@ -103,6 +105,7 @@ export function collectPullRequestListFacets(
         const held = authors.get(key);
         authors.set(key, {
           actor: held?.actor ?? entry.author,
+          label: held?.label ?? sourceControlActorLabel(entry.provider, entry.author),
           count: (held?.count ?? 0) + Number(inState),
           mergedCount: (held?.mergedCount ?? 0) + Number(entry.state === "merged"),
         });
@@ -146,7 +149,7 @@ export function pullRequestEntryViewer(
 ): string | null {
   // The environment's own answer first; a plain host key is what a single-environment listing
   // still writes, and what the snapshot from one carries.
-  return normalize(viewers[pullRequestViewerKey(entry)] ?? viewers[entry.host]);
+  return normalize(entry.viewer ?? viewers[pullRequestViewerKey(entry)] ?? viewers[entry.host]);
 }
 
 /**

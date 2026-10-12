@@ -91,7 +91,10 @@ import {
 } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { PullRequestStackMenu } from "./PullRequestStackMenu";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import {
+  sourceControlClients,
+  sourceControlRepositoryLabel,
+} from "@t3tools/client-runtime/source-control-clients";
 import { PullRequestThreadLinks } from "./PullRequestThreadLinks";
 import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -1831,11 +1834,11 @@ export function PullRequestDetailPanel({
                           onClick={() => void readLocalApi()?.shell.openExternal(repositoryUrl)}
                           className="min-w-0 cursor-pointer truncate text-left font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                         >
-                          {detail.repository}
+                          {sourceControlRepositoryLabel(detail.provider, detail.repository)}
                         </button>
                       ) : (
                         <span className="min-w-0 truncate font-medium text-muted-foreground">
-                          {detail.repository}
+                          {sourceControlRepositoryLabel(detail.provider, detail.repository)}
                         </span>
                       )
                     }

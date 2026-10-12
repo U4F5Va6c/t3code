@@ -8,6 +8,7 @@ import type {
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  collectPullRequestListFacets,
   pullRequestHostActions,
   pullRequestQuickActions,
   filterPullRequestsByInvolvement,
@@ -53,6 +54,24 @@ import {
 
 const VIEWERS = { "github.com": "Bilal" } as const;
 const NO_VIEWERS = {} as const;
+
+it("labels a Codeup author by name while filtering involvement by its ID", () => {
+  const mr = entry({
+    number: 1,
+    provider: SourceControlProviderKind.make("codeup"),
+    host: "codeup.aliyun.com",
+    repository: "org-a/repo",
+    viewer: "user-id",
+    author: { login: "user-id", name: "张三", avatarUrl: null },
+  });
+  const facet = collectPullRequestListFacets([mr], "open").authors[0];
+  expect(facet?.label).toBe("张三");
+  expect(facet?.actor.login).toBe("user-id");
+  expect(filterPullRequestsByInvolvement([mr], {}, "authored")).toEqual([mr]);
+  expect(
+    filterPullRequestsByInvolvement([{ ...mr, viewer: "someone-else" }], {}, "authored"),
+  ).toEqual([]);
+});
 
 function entry(
   overrides: Partial<EnvironmentPullRequestEntry> & Pick<PullRequestListEntry, "number">,
@@ -320,6 +339,37 @@ describe("pull request involvement filtering", () => {
     expect(
       filterPullRequestsByInvolvement(entries, VIEWERS, "authored").map((item) => item.number),
     ).toEqual([1]);
+  });
+
+  it("uses each repository's account on a shared host", () => {
+    const mixed = [
+      entry({
+        number: 1,
+        host: "codeup.aliyun.com",
+        repository: "org-a/repo",
+        viewer: "alice",
+        author: { login: "alice", name: null, avatarUrl: null },
+      }),
+      entry({
+        number: 2,
+        host: "codeup.aliyun.com",
+        repository: "org-b/repo",
+        viewer: "bob",
+        author: { login: "bob", name: null, avatarUrl: null },
+      }),
+      entry({
+        number: 3,
+        host: "codeup.aliyun.com",
+        repository: "org-b/repo",
+        viewer: "bob",
+        author: { login: "alice", name: null, avatarUrl: null },
+      }),
+    ];
+    expect(
+      filterPullRequestsByInvolvement(mixed, { "codeup.aliyun.com": "alice" }, "authored").map(
+        (item) => item.number,
+      ),
+    ).toEqual([1, 2]);
   });
 
   it("returns nothing for Authored when the viewer is unknown", () => {

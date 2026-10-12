@@ -1,3 +1,4 @@
+import { sourceControlRepositoryLabel } from "@t3tools/client-runtime/source-control-clients";
 /**
  * Loading states specific to the pull request surface — the first list, a search under way,
  * and a detail panel opening — use bars in the geometry of the content they stand for, pulsing
@@ -169,7 +170,9 @@ export function PullRequestDetailGhost({
             ) : null}
             {seed ? (
               <>
-                <span className="min-w-0 truncate font-medium">{seed.repository}</span>
+                <span className="min-w-0 truncate font-medium">
+                  {sourceControlRepositoryLabel(seed.provider, seed.repository)}
+                </span>
                 <InlineButton
                   onClick={() => void readLocalApi()?.shell.openExternal(seed.url)}
                   aria-label={`Open pull request #${seed.number} on host`}
@@ -217,7 +220,11 @@ export function PullRequestDetailGhost({
               }
               author={
                 seed ? (
-                  <PullRequestActorLabel actor={seed.author ?? null} tooltip={false} />
+                  <PullRequestActorLabel
+                    actor={seed.author ?? null}
+                    provider={seed.provider}
+                    tooltip={false}
+                  />
                 ) : (
                   <span className="flex items-center gap-1.5">
                     <GhostBar className="size-4 rounded-full" />

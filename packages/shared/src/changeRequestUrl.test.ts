@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   changeRequestUrlFor,
+  changeRequestRepositoryUrl,
   parseChangeRequestUrl,
   pullRequestCandidateUrlFromReferenceAutolink,
   siblingPullRequestUrl,
@@ -186,5 +187,24 @@ describe("changeRequestUrlFor", () => {
       repository: "org/project/_git/web",
       number: 42,
     });
+  });
+});
+
+describe("Codeup merge request links", () => {
+  it("keeps organization and nested groups across parsing and related links", () => {
+    const url = "https://codeup.aliyun.com/org/team/repo/change/7";
+    expect(parseChangeRequestUrl(url)).toEqual({
+      host: "codeup.aliyun.com",
+      repository: "org/team/repo",
+      number: 7,
+    });
+    expect(changeRequestRepositoryUrl(url)).toBe("https://codeup.aliyun.com/org/team/repo");
+    expect(siblingPullRequestUrl(url, 8)).toBe("https://codeup.aliyun.com/org/team/repo/change/8");
+    expect(changeRequestUrlFor("codeup", "codeup.aliyun.com", "org/team/repo", 7)).toBe(url);
+    expect(changeRequestUrlFor(null, "codeup.aliyun.com", "org/team/repo", 7)).toBe(url);
+    expect(
+      parseChangeRequestUrl("https://codeup.aliyun.com.evil.test/org/repo/change/7"),
+    ).toBeNull();
+    expect(parseChangeRequestUrl("https://secret@codeup.aliyun.com/org/repo/change/7")).toBeNull();
   });
 });

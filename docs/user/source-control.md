@@ -1,6 +1,6 @@
 # Source control
 
-T3 Code integrates with GitHub, GitLab, Forgejo, Gitea, Bitbucket, Azure DevOps, and GitCafe to clone
+T3 Code integrates with GitHub, GitLab, Forgejo, Gitea, Bitbucket, Azure DevOps, GitCafe, and Codeup to clone
 and publish repositories, create pull requests, and review changes.
 
 ## Review turn changes
@@ -61,6 +61,49 @@ Install [GitLab CLI](https://gitlab.com/gitlab-org/cli), then sign in:
 ```bash
 glab auth login
 ```
+
+#### Codeup
+
+Codeup Central Edition supports cloning, private repository publishing, merge request creation,
+checkout, search, previews, diffs, comments, reviews, reviewer requests, and close/reopen/merge.
+Linked merge requests use the same thread badges and review page as other source control hosts.
+Checks refer to the current Codeup patch set; unavailable or stale checks do not count as passing.
+
+T3 Code automatically uses authentication available on the machine running the environment:
+
+1. An organization token saved in **Settings → Source Control → Codeup**.
+2. `ALIBABA_CLOUD_YUNXIAO_ACCESS_TOKEN` with the matching
+   `ALIBABA_CLOUD_YUNXIAO_ORGANIZATION_ID` in the server's environment.
+3. A working `aliyun-devops` command on PATH, or the official `aliyun devops` CLI.
+
+If you already use a credential wrapper, expose it as an executable named `aliyun-devops` that
+accepts the official CLI subcommand and arguments. Shell aliases are not executables. For example,
+a 1Password setup can provide this wrapper using its existing account and env template:
+
+```sh
+#!/bin/sh
+exec op run --env-file=/absolute/path/to/your-codeup.env -- aliyun devops "$@"
+```
+
+Keep the template's existing organization and secret references; do not copy the token into the
+script. Put the executable on the server's PATH and choose **Rescan**. A locked credential manager
+may require unlocking on that machine. The official CLI alone does not imply a saved PAT login.
+Alternatively, add your organization ID and token in Settings; saved tokens cannot be viewed again.
+Repeat for each organization. Removing a saved token restores local automatic detection.
+
+Use the complete repository path beginning with the organization ID, including any nested groups,
+or its `codeup.aliyun.com` SSH/HTTPS URL. Git authentication remains separate and is required for
+cloning, pushing, checkout, and expanding full file context. Publishing currently creates private
+repositories in the organization root.
+
+New line-level review drafts, reactions, labels, stacks, merge queues, draft/ready transitions,
+and branch update actions are not available. Existing line discussions can be read, replied to,
+and resolved. General comments also show their resolution status and can be resolved or reopened
+when your account permits it. Resolved comments are hidden by default; enable **Resolved or dismissed**
+in the comments filter to view or reopen them. Approval and request-changes verify the reviewed head before sending and read back
+the current version afterward. Codeup has no atomic expected-head parameter, so refresh if the
+branch changes during a review or merge. Cross-repository diffs and non-Central deployments are not part of this preview's
+acceptance scope. ProjeX, Testhub, and standalone Flow management remain agent/CLI workflows.
 
 ### Bitbucket
 
@@ -153,6 +196,15 @@ Open **Pull requests** to review changes and comments, request reviewers, check 
 or merge. You can edit review titles and descriptions and your own comments where the host allows it.
 GitLab calls these merge requests.
 
+On mobile, **Pull requests** lists reviews across your connected environments. Open a review
+to read its description, activity, commits, and changed files. Line comments stay as drafts
+until you submit the review. **Work on PR** opens a chat with the review attached; sending
+the first message prepares a worktree from the review's branch.
+
+Previously loaded lists, review details, guides, and diff pages remain readable on mobile
+without a connection, including after restarting the app. Saved content refreshes when the
+environment reconnects; submitting changes requires a connection.
+
 Enable **Remove agent credits when merging** in Settings → Source Control to remove recognized
 agent co-author and generated-by lines from GitHub merge and squash commit messages. Human
 co-authors stay credited. The setting is off by default and projects can override it. It also
@@ -188,7 +240,9 @@ declined pull request.
 ### Review guides
 
 Review guides are in beta. Turn on **Review guides** in Settings → Source Control to add the
-**Guide** tab to pull requests on that server.
+**Guide** tab to pull requests on that server. On mobile, move between stops with **Next**
+and the back button; a stale guide offers a rewrite and hides excerpts that no longer match
+the current change.
 
 The **Guide** tab gives you a tour of a pull request without reading it line by line: stops
 through the change in reading order. Each stop points at the lines worth reading, and a stop marked
@@ -200,11 +254,12 @@ covers that layer only, and may point out what a lower layer introduced or what 
 Choose **Write guide** to have the review guide model from Settings → Source Control read the
 change in a temporary checkout; without one set, the source control writer model is used. Nothing
 in the checkout is changed, and a large pull request takes a few minutes; you can go elsewhere in
-the app and you are told when the guide is ready. Claude and Codex can write guides. The guide is
+the app. On web, you are told when the guide is ready; on mobile, return to the guide to check
+its progress. Claude and Codex can write guides. The guide is
 kept for everyone using this server. To write it again, for example after a push or after changing
 the model or instructions, choose **Rewrite guide** from the pull request's **⋯** menu.
 
-While reading a stop, select lines in an excerpt to add a comment to your review or ask an agent
+On web, while reading a stop, select lines in an excerpt to add a comment to your review or ask an agent
 about them; comments wait with the ones from the **Code** tab until you send the review. Choose a
 suggested question, or **Ask about this stop**, to open a thread that already knows which stop you
 are on. **Finish review** on the last stop opens the review with everything you collected.
@@ -227,8 +282,8 @@ in either direction. Forgejo, GitLab, Bitbucket, and Azure DevOps expose no reco
 server you are connected to keeps them instead: they follow you across the apps connected to that
 server, but the host's own site will not show them, and the count reads **viewed in T3 Code**.
 
-The **Code** tab is a web and desktop surface. The mobile app reports a pull request's status but
-does not show its diff, so marks are made and read on web and desktop.
+On mobile, open a changed file and mark it viewed from its header. Viewed files collapse,
+and their marks follow the same rules as on web and desktop.
 
 ## Troubleshooting
 

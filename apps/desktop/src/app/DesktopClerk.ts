@@ -82,12 +82,12 @@ export const desktopClerkFrontendApiHostname = resolveDesktopClerkFrontendApiHos
     : __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__,
 );
 
-function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {
+function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean, appVersion: string) {
   return createClerkBridge({
     storage: storage({ path: stateDir }),
     passkeys: true,
     renderer: {
-      scheme: ElectronProtocol.getDesktopScheme(isDevelopment),
+      scheme: ElectronProtocol.getDesktopScheme(isDevelopment, appVersion),
       host: ElectronProtocol.DESKTOP_HOST,
     },
   });
@@ -106,7 +106,12 @@ export const make = Effect.gen(function* () {
 
   const bridge = yield* Effect.acquireRelease(
     Effect.try({
-      try: () => createDesktopClerkBridge(environment.stateDir, environment.isDevelopment),
+      try: () =>
+        createDesktopClerkBridge(
+          environment.stateDir,
+          environment.isDevelopment,
+          environment.appVersion,
+        ),
       catch: (cause) =>
         new DesktopClerkBridgeInitializationError({
           stateDir: environment.stateDir,
@@ -146,7 +151,11 @@ export const make = Effect.gen(function* () {
 
       const startProviderAuthHandoff = (value: string | undefined) => {
         if (!value) return false;
-        const request = readCodexAuthHandoff(value, environment.isDevelopment);
+        const request = readCodexAuthHandoff(
+          value,
+          environment.isDevelopment,
+          environment.appVersion,
+        );
         if (!request) return false;
         void runPromise(
           Effect.gen(function* () {
@@ -172,7 +181,7 @@ export const make = Effect.gen(function* () {
       };
       const resumeProviderAuth = (value: string | undefined) => {
         const destination = providerAuthReturnUrl(value);
-        const expectedOrigin = `${ElectronProtocol.getDesktopScheme(environment.isDevelopment)}://app`;
+        const expectedOrigin = `${ElectronProtocol.getDesktopScheme(environment.isDevelopment, environment.appVersion)}://app`;
         if (!destination?.startsWith(`${expectedOrigin}/`)) return false;
         void runPromise(
           Effect.gen(function* () {

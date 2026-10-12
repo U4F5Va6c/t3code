@@ -4,6 +4,7 @@ import type {
   PullRequestState,
 } from "@t3tools/contracts";
 import type { ReactNode } from "react";
+import { sourceControlActorLabel } from "@t3tools/client-runtime/source-control-clients";
 
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -126,10 +127,12 @@ export function PullRequestRowLines({
 /** Avatar and login at the meta line's own size, with the actor's full name on hover. */
 export function PullRequestRowAuthor({
   actor,
+  provider,
   className,
   labelClassName,
 }: {
   actor: PullRequestActor | null;
+  provider: string | undefined;
   className?: string;
   labelClassName?: string;
 }) {
@@ -140,7 +143,9 @@ export function PullRequestRowAuthor({
         render={<span className={cn("inline-flex min-w-0 items-center gap-1", className)} />}
       >
         <PullRequestActorAvatar actor={actor} className="size-3.5" />
-        <span className={cn("truncate", labelClassName)}>{login}</span>
+        <span className={cn("truncate", labelClassName)}>
+          {sourceControlActorLabel(provider, actor)}
+        </span>
       </TooltipTrigger>
       <TooltipPopup side="top">
         {actor?.name && actor.name !== login ? `${actor.name} (@${login})` : login}

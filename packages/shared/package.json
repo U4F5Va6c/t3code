@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./githubMarkdownLinks": {
+      "types": "./src/githubMarkdownLinks.ts",
+      "import": "./src/githubMarkdownLinks.ts"
+    },
     "./authScopeOptions": {
       "types": "./src/authScopeOptions.ts",
       "import": "./src/authScopeOptions.ts"
@@ -478,10 +482,14 @@
     "./PtyAdapter": {
       "types": "./src/PtyAdapter.ts",
       "import": "./src/PtyAdapter.ts"
+    },
+    "./codeupPreview": {
+      "types": "./src/codeupPreview.ts",
+      "import": "./src/codeupPreview.ts"
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc-rs --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {

@@ -1,4 +1,5 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { useAtomValue } from "@effect/atom-react";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type {
   EnvironmentId,
@@ -12,6 +13,8 @@ import {
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  CircleCheckIcon,
+  CircleIcon,
   HammerIcon,
   ListFilterIcon,
   TagIcon,
@@ -54,7 +57,9 @@ import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import {
   latestPullRequestReviewOutcomes,
+  isFinishedPullRequestComment,
   orderPullRequestComments,
+  pullRequestCommentResolution,
   pullRequestFindingKey,
   pullRequestReviewOutcome,
   visibleBody,
@@ -63,6 +68,7 @@ import {
 import {
   canEditPullRequestChangeRequest,
   canEditPullRequestComment,
+  canResolvePullRequestThread,
 } from "./pullRequestEditing.logic";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestCommentBody } from "./PullRequestCommentBody";
@@ -132,7 +138,6 @@ function CommentLocation({
         <TooltipTrigger render={<span className="truncate font-mono" />}>{label}</TooltipTrigger>
         <TooltipPopup>{label}</TooltipPopup>
       </Tooltip>
-      {thread?.isOutdated ? <span className="shrink-0">Outdated</span> : null}
     </div>
   );
 }
@@ -200,6 +205,83 @@ function CommentBody({
   );
 }
 
+/** The same host operation resolves conversations on the diff and in the general discussion. */
+function CommentResolutionControl({
+  resolution,
+  detail,
+  environmentId,
+  reference,
+  onRefresh,
+  showStatus = true,
+}: {
+  resolution: NonNullable<PullRequestComment["resolution"]>;
+  detail: PullRequestDetailView;
+  environmentId: EnvironmentId;
+  reference: PullRequestRef;
+  onRefresh: () => void;
+  showStatus?: boolean;
+}) {
+  const canWrite = useAtomValue(
+    pullRequestEnvironment.setThreadResolution.permissionAtom(environmentId),
+  );
+  const setResolution = useAtomCommand(pullRequestEnvironment.setThreadResolution, {
+    reportFailure: false,
+  });
+  const [pending, setPending] = useState(false);
+  const sending = useRef(false);
+  const canResolve =
+    canWrite &&
+    detail.capabilities.review.resolve &&
+    canResolvePullRequestThread(detail, resolution);
+  const toggle = async () => {
+    if (!canResolve || sending.current) return;
+    sending.current = true;
+    setPending(true);
+    try {
+      const result = await setResolution({
+        environmentId,
+        input: { ...reference, threadId: resolution.threadId, resolved: !resolution.isResolved },
+      });
+      if (result._tag === "Failure") {
+        toastManager.add({
+          type: "error",
+          title: "Could not update the conversation. Refresh and try again.",
+        });
+        return;
+      }
+      onRefresh();
+    } finally {
+      sending.current = false;
+      setPending(false);
+    }
+  };
+  const Icon = resolution.isResolved ? CircleCheckIcon : CircleIcon;
+  return (
+    <div
+      className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
+      aria-busy={pending}
+    >
+      {showStatus ? (
+        <span
+          className={cn(
+            "flex items-center gap-1",
+            resolution.isResolved && "text-success-foreground",
+          )}
+        >
+          <Icon aria-hidden className="size-3.5" />
+          {resolution.isResolved ? "Resolved" : "Unresolved"}
+        </span>
+      ) : null}
+      {resolution.isOutdated ? <span>Outdated</span> : null}
+      {canResolve ? (
+        <Button size="xs" variant="ghost" disabled={pending} onClick={() => void toggle()}>
+          {pending ? "Updating..." : resolution.isResolved ? "Unresolve" : "Resolve"}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 /** Finished work — a resolved conversation or a dismissed review — opens collapsed. */
 function CollapsedComment({
   comment,
@@ -207,6 +289,7 @@ function CollapsedComment({
   label,
   body,
   reactionBar,
+  resolutionControl,
   detail,
   thread,
 }: {
@@ -216,6 +299,7 @@ function CollapsedComment({
   /** Null where the remark is nothing but its verdict, which a dismissal usually is. */
   body: string | null;
   reactionBar: ReactNode;
+  resolutionControl: ReactNode;
   detail: PullRequestDetailView;
   thread: PullRequestReviewThread | undefined;
 }) {
@@ -238,6 +322,7 @@ function CollapsedComment({
               />
             </CollapsibleTrigger>
             {reactionBar}
+            {resolutionControl}
           </div>
           <CommentLocation comment={comment} thread={thread} />
           {!open && body ? (
@@ -426,8 +511,7 @@ export function PullRequestSummaryTab({
   );
 
   const isFinished = (comment: PullRequestComment) =>
-    threadByCommentId.get(comment.id)?.isResolved === true ||
-    pullRequestReviewOutcome(comment.reviewState) === "dismissed";
+    isFinishedPullRequestComment(comment, threadByCommentId.get(comment.id));
   const isBot = (comment: PullRequestComment) =>
     comment.author?.isBot === true || comment.author?.login.endsWith("[bot]") === true;
   const filteredComments = detail.comments.filter(
@@ -564,6 +648,17 @@ export function PullRequestSummaryTab({
 
   const renderComment = (comment: PullRequestComment) => {
     const thread = threadByCommentId.get(comment.id);
+    const resolution = pullRequestCommentResolution(comment, thread);
+    const resolutionControl = resolution ? (
+      <CommentResolutionControl
+        resolution={resolution}
+        detail={detail}
+        environmentId={environmentId}
+        reference={reference}
+        showStatus={!isFinished(comment)}
+        onRefresh={onRefresh}
+      />
+    ) : null;
     const body = visibleBody(comment.body);
     if (isFinished(comment)) {
       return (
@@ -573,7 +668,8 @@ export function PullRequestSummaryTab({
           editing={commentEditing}
           detail={detail}
           thread={thread}
-          label={thread?.isResolved ? "Resolved" : "Review dismissed"}
+          label={resolution?.isResolved ? "Resolved" : "Review dismissed"}
+          resolutionControl={resolutionControl}
           body={body}
           reactionBar={
             <PullRequestReactionBar
@@ -643,6 +739,7 @@ export function PullRequestSummaryTab({
             </Button>
           ) : null}
           {reactionBar}
+          {resolutionControl}
         </div>
         <div className="px-3">
           <CommentLocation comment={comment} thread={thread} />
