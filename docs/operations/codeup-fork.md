@@ -81,7 +81,8 @@ Fork 只运行 `.github/workflows/codeup-ci.yml`：`codeup-integration` 的 PR �
 - 专用协议：`t3code-codeup-preview://`，不接管原版链接和默认浏览器。
 - 禁用自动更新；下一次验收下载新的 PR 制品。
 
-DMG 未签名、未公证。首次打开可能需要在 macOS **系统设置 → 隐私与安全性** 中允许打开；
+应用使用 ad-hoc 本地签名，CI 会挂载最终 DMG 校验签名并启动包内 Electron；没有 Developer ID 签名或 Apple 公证。
+首次打开可能需要在 macOS **系统设置 → 隐私与安全性** 中允许打开；
 只对核对过提交和校验和的该应用放行，不要关闭全局 Gatekeeper。
 
 首次启动会建立空的隔离 environment。可添加独立测试 checkout，也可连接隔离远程服务；

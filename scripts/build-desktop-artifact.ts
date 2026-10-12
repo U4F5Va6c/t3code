@@ -2860,6 +2860,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
             },
           ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
+      // Repacking Electron invalidates its resource seal. Preview builds still need a fresh
+      // ad-hoc signature, even though they have no Developer ID certificate or notarization.
+      ...(isCodeupPreviewVersion(version) && !signed
+        ? { identity: "-", hardenedRuntime: false, notarize: false }
+        : {}),
       ...(macPasskeySigning
         ? {
             entitlements: macPasskeySigning.entitlementsPath,

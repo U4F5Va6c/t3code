@@ -101,12 +101,29 @@ jobs:
       - name: Build isolated acceptance app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # The preview explicitly uses identity "-" (ad-hoc), without signing credentials.
+          CSC_FOR_PULL_REQUEST: "true"
           T3CODE_DESKTOP_UPDATE_REPOSITORY: U4F5Va6c/t3code
         run: |
           version="0.0.0-codeup.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}"
           vp run dist:desktop:artifact --platform mac --target dmg --arch '${{ matrix.arch }}' --build-version "$version" --output-dir artifacts --verbose
           shasum -a 256 artifacts/*.dmg > artifacts/SHA256SUMS.txt
           git rev-parse HEAD > artifacts/COMMIT.txt
+      - name: Verify app inside DMG
+        run: |
+          preview_dmgs=(artifacts/*.dmg)
+          test "${#preview_dmgs[@]}" -eq 1
+          hdiutil verify "${preview_dmgs[0]}"
+          preview_mount="$(mktemp -d "$RUNNER_TEMP/codeup-dmg.XXXXXX")"
+          hdiutil attach "${preview_dmgs[0]}" -readonly -nobrowse -mountpoint "$preview_mount"
+          trap 'hdiutil detach "$preview_mount"' EXIT
+          preview_app="$preview_mount/T3 Code (Codeup Preview).app"
+          preview_report="artifacts/SIGNATURE-${{ matrix.arch }}.txt"
+          codesign --display --verbose=4 "$preview_app" 2>&1 | tee "$preview_report"
+          grep -q '^Signature=adhoc$' "$preview_report"
+          codesign --verify --deep --strict --verbose=2 "$preview_app" 2>&1 | tee -a "$preview_report"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$preview_app/Contents/Info.plist")" = 'io.github.u4f5va6c.t3code.codeup-preview'
+          ELECTRON_RUN_AS_NODE=1 "$preview_app/Contents/MacOS/T3 Code (Codeup Preview)" -e 'if (!process.versions.electron) process.exit(1); console.log(`Packaged Electron ${process.versions.electron} (${process.arch}) started`)' | tee -a "$preview_report"
       - name: Upload DMG and checksum
         uses: actions/upload-artifact@v7
         with:
@@ -115,5 +132,6 @@ jobs:
             artifacts/*.dmg
             artifacts/SHA256SUMS.txt
             artifacts/COMMIT.txt
+            artifacts/SIGNATURE-*.txt
           if-no-files-found: error
           retention-days: 30
