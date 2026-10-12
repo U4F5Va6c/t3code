@@ -85,7 +85,9 @@ Codeup CI 从同一 SHA 构建 Apple Silicon（arm64）和 Intel（x64）的 DMG
 - 专用协议：`t3code-codeup-preview://`，不接管原版链接和默认浏览器。
 - 正式 Fork 构建使用固定 `codeup` 更新通道，只查询本 Fork。普通 PR 包不带更新源；手动 dispatch Codeup CI 并选择 `release_candidate` 可生成带更新配置的测试包，其 `codeup-test-*` Release 不进入更新通道。
 
-应用仍使用 ad-hoc 本地签名，CI 会挂载最终 DMG 校验签名并启动包内 Electron；没有 Developer ID 签名或 Apple 公证。检查更新和下载复用 electron-updater，但 ad-hoc 的指定要求绑定单个构建的 cdhash，不能把下载成功视为 Squirrel.Mac 自动安装成功。若系统拒绝安装，从设置中的 Codeup Release 链接下载 DMG，手动替换 Preview；保留 profile 和连接。要获得可靠的原生自动替换，需要配置属于 Fork 的持续签名身份，并重新完成两版安装验收；不要放宽签名要求或关闭 Gatekeeper。
+应用使用 ad-hoc 本地签名，CI 会挂载最终 DMG 校验签名并启动包内 Electron；没有 Developer ID 签名或 Apple 公证。检查和下载复用 electron-updater；在应用内确认安装后，Fork 专用安装器校验 ZIP 摘要、应用身份、版本、签名完整性与架构，正常退出客户端后替换其 app 并重新打开。它不使用 Squirrel.Mac 的跨构建 cdhash 匹配，也不移除 quarantine 或关闭 Gatekeeper。发布真实性来自固定的 Fork HTTPS 更新源与清单；这不等同于 Apple 公证。
+
+应用必须位于当前用户可写的目录（例如本机的 Applications），不能直接从 DMG 或 App Translocation 位置更新。安装保留同目录下的 `.t3-codeup-previous.app`，下一次更新时替换该备份；替换或系统启动请求失败会恢复旧 app，日志在 Preview profile 的 `codeup-update.log`。系统接受启动请求后发生的应用崩溃不等于安装器可判断的健康状态，必要时退出应用并手动恢复旧包；内置后端涉及的数据迁移还需使用对应数据备份。若系统额外要求确认或目录不可写，从 Release 下载 DMG 手动安装，不降低系统校验。Developer ID/公证可用于减少分发时的系统提示，但不是此确认安装流程的前置条件。
 首次打开可能需要在 macOS **系统设置 → 隐私与安全性** 中允许打开；
 只对核对过提交和校验和的该应用放行，不要关闭全局 Gatekeeper。
 

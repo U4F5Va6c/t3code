@@ -24,11 +24,15 @@ for those.
 ## Codeup Preview
 
 Codeup Preview follows its own update channel and can remain installed beside
-official T3 Code. Check for updates from the sidebar or Settings. If macOS
-rejects an automatic installation, open **Codeup Preview releases** in Settings,
-download the DMG for your Mac, quit Preview and replace that app. Your Preview
-profile and connections remain. Current ad-hoc builds may require this manual
-installation step.
+official T3 Code. Check for updates from the sidebar or Settings. After the
+download finishes, confirm installation: Preview quits, replaces its own app
+and reopens, keeping your profile and connections. Install Preview in a folder
+you can write to, such as Applications; do not run it from the DMG.
+
+macOS may ask for an additional security confirmation. If installation fails,
+open **Codeup Preview releases** in Settings and install the matching DMG.
+The installer keeps the previous app beside Preview as `.t3-codeup-previous.app`
+for recovery; it does not update the official app.
 
 In **Settings → Connections**, Codeup servers are offered the latest complete
 Fork release, even before you update the client. Keep the client open through

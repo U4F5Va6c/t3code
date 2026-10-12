@@ -153,6 +153,8 @@ jobs:
         run: vp install --frozen-lockfile --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
       - name: Install Electron
         run: vp run --filter @t3tools/desktop ensure:electron
+      - name: Verify Fork native installer
+        run: vp test run apps/desktop/src/electron/CodeupMacInstaller.test.ts apps/desktop/src/electron/ElectronUpdater.test.ts
       - name: Resolve shared Codeup version
         env:
           CODEUP_VERSION: ${{ needs.resolve.outputs.version }}

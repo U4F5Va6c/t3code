@@ -16,7 +16,7 @@
 - **标签（Labels）**：`gh issue edit <n> -R U4F5Va6c/t3code --add-label "..."` / `--remove-label "..."`。
 - **关闭（Close）**：合入后逐项核对验收，再 `gh issue close <n> -R U4F5Va6c/t3code --comment "..."`。
 
-PR 的目标分支是 `codeup-integration`，不是默认的 `main`，所以 `Closes #n` 不会自动关闭 Issue；`implement-spec` 结束时按上面的 **关闭** 显式关闭。
+PR 的目标分支是 Fork 默认分支 `codeup-integration`。尚有部署或验收项时使用关联引用，不使用 `Closes #n` 自动结项；合入后逐项核对，再按上面的 **关闭** 显式关闭。
 
 ## PR 作为分诊入口
 
