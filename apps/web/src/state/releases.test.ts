@@ -96,7 +96,6 @@ describe("releasePublishedAtom", () => {
   });
 });
 
-
 describe("codeupReleaseAtom", () => {
   afterEach(() => fetchMock.mockReset());
   it.each(["HTTP 403", "network error"])("preserves %s and supports retry", async (failure) => {
