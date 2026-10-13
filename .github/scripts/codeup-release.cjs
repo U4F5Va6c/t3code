@@ -51,7 +51,7 @@ async function resolve({ github, context, core }) {
   await fs.writeFile("codeup-build.json", `${JSON.stringify(metadata, null, 2)}\n`);
   core.setOutput("version", version);
   core.setOutput("sha", sha);
-  core.setOutput("build", String(!alreadyPublished || context.eventName === "pull_request"));
+  core.setOutput("build", String(!alreadyPublished && context.eventName !== "pull_request"));
   return metadata;
 }
 

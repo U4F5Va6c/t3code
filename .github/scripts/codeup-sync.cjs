@@ -13,10 +13,12 @@ async function ensureCi(github, sha, ref) {
     workflow_id: "codeup-ci.yml",
     head_sha: sha,
     branch: ref,
+    ...(ref === BRANCH ? { event: "pull_request" } : {}),
     per_page: 100,
   });
   const existing = data.workflow_runs[0];
-  if (!existing)
+  // PR events now create approval-required runs; only token-authenticated pushes need a dispatch.
+  if (!existing && ref === BASE)
     await github.rest.actions.createWorkflowDispatch({
       ...REPOSITORY,
       workflow_id: "codeup-ci.yml",
@@ -145,8 +147,9 @@ async function sync({ github, context, core, run = git, dryRun = false, autoMerg
     (await github.rest.pulls.create({ ...REPOSITORY, head: BRANCH, base: BASE, title, body })).data;
   if (pr && (changed || pr.title !== title))
     await github.rest.pulls.update({ ...REPOSITORY, pull_number: pr.number, title, body });
-  // GITHUB_TOKEN-created PRs do not trigger pull_request workflows.
   const ci = await ensureCi(github, sha, BRANCH);
+  if (!ci || ci.conclusion === "action_required")
+    core.info("Waiting for the PR workflow. Approve workflows to run on the PR if requested.");
   if (autoMerge && ci?.conclusion === "success") {
     // The merge API enforces branch protection; a matching SHA prevents merging a newer push.
     try {
