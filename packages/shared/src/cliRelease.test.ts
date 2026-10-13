@@ -91,4 +91,29 @@ describe("cliRelease", () => {
     );
     expect(cliReleaseIndexPageUrl(3)).toContain("page=3");
   });
+
+  it("keeps Codeup discovery and downloads on the Fork and ignores incomplete acceptance releases", () => {
+    const version = "0.0.46-codeup.20261013.42";
+    expect(cliReleaseChannelOf(version)).toBe("codeup");
+    expect(cliReleaseIndexPageUrl(1, "codeup")).toContain("repos/U4F5Va6c/t3code/releases");
+    expect(cliReleaseDownloadBaseUrl(version)).toBe(
+      `https://github.com/U4F5Va6c/t3code/releases/download/v${version}`,
+    );
+    const complete = {
+      tag_name: `v${version}`,
+      assets: ["codeup-release.json", "SHA256SUMS", "codeup-mac.yml"].map((name) => ({ name })),
+    };
+    expect(
+      newestCliReleaseVersion(
+        [
+          { ...complete, tag_name: "v0.0.46-codeup.20261013.44", draft: true },
+          { tag_name: "v0.0.46-codeup.20261013.43" },
+          { ...complete, tag_name: `codeup-test-${version}` },
+          complete,
+        ],
+        "codeup",
+      ),
+    ).toBe(version);
+    expect(newestCliReleaseVersion([complete], "nightly")).toBeUndefined();
+  });
 });

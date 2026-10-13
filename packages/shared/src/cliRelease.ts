@@ -5,6 +5,8 @@
  * platform key, so a rename here is a release-breaking change.
  */
 
+import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "./codeupPreview.ts";
+
 const CLI_RELEASE_REPOSITORY = "pingdotgg/t3code";
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 /** Overrides the download origin for mirrors and air-gapped installs. */
@@ -54,14 +56,12 @@ export function cliArchiveFileName(version: string, platformKey: CliArchivePlatf
   return `t3-${version}-${platformKey}.${platformKey.startsWith("win32") ? "zip" : "tar.gz"}`;
 }
 
-const CLI_RELEASE_DEFAULT_BASE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases/download`;
-
 /** Directory that `releases/download/<tag>/<asset>` lives under. */
-export function cliReleaseDownloadBaseUrl(
-  version: string,
-  baseUrl: string | undefined = CLI_RELEASE_DEFAULT_BASE_URL,
-): string {
-  return `${(baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL).replace(/\/+$/, "")}/v${version}`;
+export function cliReleaseDownloadBaseUrl(version: string, baseUrl?: string): string {
+  const repository = isCodeupPreviewVersion(version)
+    ? CODEUP_PREVIEW.repository
+    : CLI_RELEASE_REPOSITORY;
+  return `${(baseUrl?.trim() || `https://github.com/${repository}/releases/download`).replace(/\/+$/, "")}/v${version}`;
 }
 
 /**
@@ -79,15 +79,17 @@ export function parseChecksums(text: string): ReadonlyMap<string, string> {
   return checksums;
 }
 
-export type CliReleaseChannel = "stable" | "nightly" | "preview";
+export type CliReleaseChannel = "stable" | "nightly" | "preview" | "codeup";
 export const CLI_RELEASE_CHANNELS: ReadonlyArray<CliReleaseChannel> = [
   "stable",
   "nightly",
   "preview",
+  "codeup",
 ];
 
 /** The release train a version was published on, derived from its prerelease tag. */
 export function cliReleaseChannelOf(version: string): CliReleaseChannel {
+  if (isCodeupPreviewVersion(version)) return "codeup";
   const channel = /^[^-+]+-(nightly|preview)\.\d{8}\.\d+$/.exec(version)?.[1];
   return channel === "nightly" || channel === "preview" ? channel : "stable";
 }
@@ -97,8 +99,23 @@ export function cliReleaseChannelOf(version: string): CliReleaseChannel {
  * until a channel match turns up; a busy nightly train can push the newest
  * preview or stable release past any single page.
  */
-export function cliReleaseIndexPageUrl(page: number): string {
-  return `https://api.github.com/repos/${CLI_RELEASE_REPOSITORY}/releases?per_page=100&page=${page}`;
+export function cliReleaseIndexPageUrl(page: number, channel?: CliReleaseChannel): string {
+  const repository = channel === "codeup" ? CODEUP_PREVIEW.repository : CLI_RELEASE_REPOSITORY;
+  return `https://api.github.com/repos/${repository}/releases?per_page=100&page=${page}`;
+}
+
+/** Published last with the complete desktop/server asset set; old acceptance releases lack it. */
+const CODEUP_RELEASE_MANIFEST = "codeup-release.json";
+
+export function hasCodeupReleaseAssets(release: {
+  readonly assets?: ReadonlyArray<{ readonly name: string }> | undefined;
+}): boolean {
+  const names = new Set(release.assets?.map((asset) => asset.name));
+  return (
+    names.has(CODEUP_RELEASE_MANIFEST) &&
+    names.has(CLI_RELEASE_CHECKSUMS_FILE) &&
+    names.has("codeup-mac.yml")
+  );
 }
 
 /**
@@ -111,11 +128,13 @@ export function newestCliReleaseVersion(
   releases: ReadonlyArray<{
     readonly tag_name: string;
     readonly draft?: boolean | undefined;
+    readonly assets?: ReadonlyArray<{ readonly name: string }> | undefined;
   }>,
   channel: CliReleaseChannel,
 ): string | undefined {
   for (const release of releases) {
     if (release.draft) continue;
+    if (channel === "codeup" && !hasCodeupReleaseAssets(release)) continue;
     const version = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(release.tag_name)?.[1];
     if (version === undefined) continue;
     if (cliReleaseChannelOf(version) === channel) return version;

@@ -297,7 +297,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
   });
 
-  it("reuses nightly artwork for Codeup without enabling an updater feed", () => {
+  it("reuses nightly artwork for the independent Codeup channel", () => {
     const version = "0.0.46-codeup.20261012.15";
     assert.deepStrictEqual(
       resolveDesktopBuildIconAssets(version),
@@ -305,7 +305,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     );
     assert.equal(resolveDesktopWebAssetBrand(version), "nightly");
     assert.equal(resolveDesktopProductName(version), "T3 Code (Codeup Preview)");
-    assert.equal(isDesktopPreviewVersion(version), true);
+    assert.equal(isDesktopPreviewVersion(version), false);
   });
 
   it.effect("resolves GitHub desktop publish config from Effect config", () =>
@@ -2154,7 +2154,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(config.appId, "io.github.u4f5va6c.t3code.codeup-preview");
       assert.equal(config.productName, "T3 Code (Codeup Preview)");
       assert.equal(config.publish, undefined);
-      assert.deepStrictEqual(mac.target, ["dmg"]);
+      assert.deepStrictEqual(mac.target, ["dmg", "zip"]);
       assert.equal(mac.identity, "-");
       assert.equal(mac.hardenedRuntime, false);
       assert.equal(mac.notarize, false);
@@ -2165,6 +2165,40 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       Effect.provide(
         ConfigProvider.layer(
           ConfigProvider.fromEnv({ env: { T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code" } }),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("publishes Codeup updates only when explicitly enabled and always from the Fork", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.0.46-codeup.20261013.42",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.deepEqual(config.publish, [
+        {
+          provider: "github",
+          owner: "U4F5Va6c",
+          repo: "t3code",
+          releaseType: "prerelease",
+          channel: "codeup",
+        },
+      ]);
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: {
+              T3CODE_CODEUP_RELEASE: "true",
+              T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
+            },
+          }),
         ),
       ),
     ),

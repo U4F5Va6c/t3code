@@ -160,6 +160,30 @@ describe("environment maintenance access", () => {
 describe("environment release checks", () => {
   const signal = new AbortController().signal;
 
+  it("checks the Fork feed and offers only complete Codeup releases", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      Response.json([
+        { tag_name: "v2.0.0" },
+        { tag_name: "v1.0.0-codeup.20261013.3", assets: [] },
+        { tag_name: "codeup-test-1.0.0-codeup.20261013.4" },
+        {
+          tag_name: "v1.0.0-codeup.20261013.2",
+          assets: [
+            { name: "codeup-release.json" },
+            { name: "SHA256SUMS" },
+            { name: "codeup-mac.yml" },
+          ],
+        },
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await findEnvironmentUpdate("1.0.0-codeup.20261013.1", signal)).toBe(
+      "1.0.0-codeup.20261013.2",
+    );
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("repos/U4F5Va6c/t3code/releases");
+    expect(await findEnvironmentUpdate("1.0.0-codeup.20261013.2", signal)).toBeNull();
+  });
+
   it("keeps stable hosts on stable releases and ignores drafts", async () => {
     vi.stubGlobal(
       "fetch",

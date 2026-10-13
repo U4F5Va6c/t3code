@@ -15,10 +15,37 @@ background service stays on its current release channel. A remote desktop app
 installs the latest release from its own channel. Hover the button to see what
 it will update.
 
-Server updates appear only after that version is published to npm. Remote
+Official server updates appear only after that version is published to npm. Codeup
+servers use complete releases from the Fork instead. Remote
 desktop apps do not wait for npm. Servers that need
 a manual update are not included. Use the notice or **Settings → Connections**
 for those.
+
+## Codeup Preview
+
+Codeup Preview follows its own update channel and can remain installed beside
+official T3 Code. Check for updates from the sidebar or Settings. After the
+download finishes, confirm installation: Preview quits, replaces its own app
+and reopens, keeping your profile and connections. Install Preview in a folder
+you can write to, such as Applications; do not run it from the DMG.
+
+macOS may ask for an additional security confirmation. If installation fails,
+open **Codeup Preview releases** in Settings and install the matching DMG.
+The installer keeps the previous app beside Preview as `.t3-codeup-previous.app`
+for recovery; it does not update the official app.
+
+In **Settings → Connections**, Codeup servers are offered the latest complete
+Fork release, even before you update the client. Keep the client open through
+the server restart. Official and Codeup servers keep their own release sources;
+use Codeup Preview to manage Fork upgrades. An older official client may connect
+but cannot discover the Fork update channel.
+
+The Fork command-line installation uses `~/.t3-codeup` by default. Run `t3 update`
+on the server's machine to update its Fork installation. A server started by
+hand needs a restart; a supported background service can update from Connections.
+Updating a desktop-hosted server instead updates the desktop app on that machine.
+Keep a backup before upgrading important work: restoring an older executable
+alone does not undo database migrations.
 
 The confirmation counts the running threads that the restarts will interrupt,
 and how many can resume afterwards. See **Continue threads after restarts**

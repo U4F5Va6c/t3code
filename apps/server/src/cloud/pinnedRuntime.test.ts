@@ -11,11 +11,18 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as ProcessRunner from "../processRunner.ts";
 import {
   ensurePinnedRuntimeInstalled,
+  hasRuntimeInstallSpace,
   pinnedRuntimeCommand,
   pinnedRuntimePaths,
   PinnedRuntimeInstallError,
   type PinnedRuntimeProgress,
 } from "./pinnedRuntime.ts";
+
+it("reserves extraction and backup space instead of using only the compressed download size", () => {
+  assert.isFalse(hasRuntimeInstallSpace(500n * 1024n * 1024n, 1));
+  assert.isFalse(hasRuntimeInstallSpace(1000n * 1024n * 1024n, 200 * 1024 * 1024));
+  assert.isTrue(hasRuntimeInstallSpace(2n * 1024n * 1024n * 1024n, 200 * 1024 * 1024));
+});
 
 // Every install fetches the release archive, checks it against SHA256SUMS,
 // and unpacks it with tar. The fake client serves both files; the fake runner

@@ -21,6 +21,8 @@ import * as Path from "effect/Path";
 import { HttpClient } from "effect/http";
 
 import { CLI_RELEASE_BASE_URL_ENV } from "@t3tools/shared/cliRelease";
+import { isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
+import packageJson from "../../package.json" with { type: "json" };
 
 import * as ServerConfig from "../config.ts";
 import * as DesktopAppUpdate from "../desktopUpdate/DesktopAppUpdate.ts";
@@ -217,6 +219,11 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
     if (!isExactServiceVersion(targetVersion)) {
       return yield* failWith(`'${targetVersion}' is not an exact t3 version.`);
     }
+    if (isCodeupPreviewVersion(packageJson.version) !== isCodeupPreviewVersion(targetVersion)) {
+      return yield* failWith(
+        "This server follows its own release source. Use the Codeup Preview client to update a Codeup server; official and Fork installations cannot replace each other.",
+      );
+    }
     if (yield* Ref.getAndSet(inFlight, true)) {
       return yield* failWith("A server update is already in progress.");
     }
@@ -306,7 +313,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         Effect.mapError((error) =>
           error._tag === "PinnedRuntimePreflightBlockedError"
             ? failWith(error.reason, error)
-            : failWith(`Could not prepare t3@${targetVersion}.`, error),
+            : failWith(`Could not prepare t3@${targetVersion}: ${error.message}`, error),
         ),
       );
 

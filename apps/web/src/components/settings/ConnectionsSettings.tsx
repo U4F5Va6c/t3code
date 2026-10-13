@@ -183,6 +183,8 @@ import {
   usePrimaryEnvironmentId,
 } from "~/state/environments";
 import { APP_VERSION } from "~/branding";
+import { useCodeupReleaseVersion } from "~/state/releases";
+import { isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "~/state/server";
@@ -1545,7 +1547,13 @@ function SavedBackendListRow({
       );
     },
   });
-  const versionMismatch = resolveServerConfigVersionMismatch(environment.serverConfig);
+  const codeupVersion = useCodeupReleaseVersion(
+    isCodeupPreviewVersion(environment.serverConfig?.environment.serverVersion),
+  );
+  const versionMismatch = resolveServerConfigVersionMismatch(
+    environment.serverConfig,
+    codeupVersion,
+  );
   const serverUpdateState = useAtomValue(serverEnvironment.updateStateAtom(environmentId));
   const resumingServerUpdate =
     serverUpdateState.status === "running" && serverUpdateState.stage === "resuming";
@@ -2035,6 +2043,11 @@ export function ConnectionsSettings() {
   const desktopBridge = window.desktopBridge;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { environments } = useEnvironments();
+  const codeupVersion = useCodeupReleaseVersion(
+    environments.some((environment) =>
+      isCodeupPreviewVersion(environment.serverConfig?.environment.serverVersion),
+    ),
+  );
   const primaryEnvironment = usePrimaryEnvironment();
   const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
   const connectSshEnvironment = useAtomCommand(connectSshEnvironmentAtom, {
@@ -2089,7 +2102,10 @@ export function ConnectionsSettings() {
   const savedServerUpdateTargets = useMemo(
     () =>
       savedServerUpdateStates.flatMap(({ environment, updateStatus }): ServerUpdateTarget[] => {
-        const mismatch = resolveServerConfigVersionMismatch(environment.serverConfig);
+        const mismatch = resolveServerConfigVersionMismatch(
+          environment.serverConfig,
+          codeupVersion,
+        );
         const selfUpdate = resolveServerSelfUpdateCapability(environment.serverConfig);
         const desktopAppUpdate = supportsDesktopAppUpdate(environment.serverConfig);
         if (
@@ -2118,7 +2134,7 @@ export function ConnectionsSettings() {
           },
         ];
       }),
-    [savedServerUpdateStates],
+    [savedServerUpdateStates, codeupVersion],
   );
   // Switched-off machines never receive threads, so they stay out of the
   // load balancing and GitHub sharing lists. The WSL backend has no row in
@@ -2221,7 +2237,10 @@ export function ConnectionsSettings() {
     DesktopServerExposureState["mode"] | null
   >(null);
   const primaryServerConfig = primaryEnvironment?.serverConfig ?? null;
-  const primaryVersionMismatch = resolveServerConfigVersionMismatch(primaryServerConfig);
+  const primaryVersionMismatch = resolveServerConfigVersionMismatch(
+    primaryServerConfig,
+    codeupVersion,
+  );
   const primaryServerUpdateState = useAtomValue(
     serverEnvironment.updateStateAtom(primaryEnvironmentId),
   );
