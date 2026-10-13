@@ -38,6 +38,8 @@ import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapter
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSearch from "../../orchestration-v2/ThreadSearch.ts";
 import * as PreviewBrowser from "../../preview/PreviewBrowser.ts";
+import * as SourceControlRepositoryService from "../../sourceControl/SourceControlRepositoryService.ts";
+import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
@@ -50,6 +52,7 @@ import { dispatchFailure } from "../threadAccess.ts";
 import { OrchestratorToolkit } from "./orchestrator/tools.ts";
 import { PreviewToolkit } from "./preview/tools.ts";
 import { PreviewControlsToolkit } from "./previewControls/tools.ts";
+import { SourceControlToolkit } from "./sourceControl/tools.ts";
 import { EnvironmentToolkit } from "./environment/tools.ts";
 import * as EnvironmentHandlers from "./environment/handlers.ts";
 import { ProjectToolkit } from "./project/tools.ts";
@@ -93,6 +96,7 @@ it("publishes unique tool names with reference-free object-root inputs", () => {
     AttachmentToolkit,
     ProjectToolkit,
     EnvironmentToolkit,
+    SourceControlToolkit,
     PreviewControlsToolkit,
     DeviceToolkit,
     PullRequestsToolkit,
@@ -879,3 +883,58 @@ it.effect("only the caller that prepared a pending upload can discard it", () =>
     ),
   ),
 );
+
+it.effect("repository MCP uses the shared service only for the granted environment", () => {
+  const calls: unknown[] = [];
+  const input = {
+    provider: "codeup",
+    apiHost: "openapi-rdc.aliyuncs.com",
+    organizationId: "org-a",
+    page: 2,
+    perPage: 20,
+  };
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const call = (invocation: McpInvocationContext.McpInvocationScope) =>
+      server
+        .callTool({ name: "t3_source_control_repositories", arguments: input })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+    expect(declaredFailure(yield* call({ ...scope, capabilities: new Set() }))).toMatchObject({
+      code: "capability_denied",
+    });
+    expect(
+      declaredFailure(
+        yield* call({ ...scope, environmentId: EnvironmentId.make("another-environment") }),
+      ),
+    ).toMatchObject({ code: "capability_denied" });
+    expect(calls).toEqual([]);
+    const allowed = yield* call(scope);
+    expect(allowed.isError).toBe(false);
+    expect(allowed.structuredContent).toEqual({ repositories: [], nextPage: null });
+    expect(calls).toEqual([input]);
+  }).pipe(
+    Effect.provide(
+      McpHttpServer.layerSourceControlToolkit.pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
+        Layer.provide(
+          Layer.mock(ServerEnvironment.ServerEnvironment)({
+            getEnvironmentId: Effect.succeed(scope.environmentId),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
+            listRepositories: (request) => {
+              calls.push(request);
+              return Effect.succeed({ repositories: [], nextPage: null });
+            },
+          }),
+        ),
+      ),
+    ),
+  );
+});

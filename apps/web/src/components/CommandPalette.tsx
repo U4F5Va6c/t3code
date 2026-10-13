@@ -123,6 +123,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
+import { RepositoryDirectory } from "./sourceControl/RepositoryDirectory";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
@@ -3596,6 +3597,33 @@ function OpenCommandPaletteDialog(props: {
         <div role="status" className="px-4 py-3 text-sm text-muted-foreground">
           Loading folders...
         </div>
+      ) : null}
+      {addProjectCloneFlow?.step === "repository" &&
+      addProjectRemoteSourceProvider(addProjectCloneFlow.source) === "codeup" ? (
+        <RepositoryDirectory
+          key={addProjectCloneFlow.environmentId}
+          environmentId={addProjectCloneFlow.environmentId}
+          onSelect={(repository) => {
+            cloneLookupGeneration.current += 1;
+            setIsRemoteProjectLookingUp(false);
+            setAddProjectCloneFlow({
+              step: "confirm",
+              environmentId: addProjectCloneFlow.environmentId,
+              source: addProjectCloneFlow.source,
+              repositoryInput: repository.nameWithOwner,
+              repository,
+              remoteUrl: getDefaultCloneUrl(repository),
+            });
+            setHighlightedItemValue(null);
+            setQuery(
+              getCloneDestinationPath(
+                getDefaultCloneParentPath(addProjectCloneFlow.environmentId),
+                getCloneDirectoryName(repository.nameWithOwner),
+              ),
+            );
+            setBrowseGeneration((generation) => generation + 1);
+          }}
+        />
       ) : null}
       <CommandPaletteVirtualizedResults
         rows={resultRows.rows}

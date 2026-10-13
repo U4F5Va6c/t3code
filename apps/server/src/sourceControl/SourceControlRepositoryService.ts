@@ -7,6 +7,10 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
 import {
+  type SourceControlRepositoryDirectoryInput,
+  type SourceControlRepositoryDirectoryResult,
+  type SourceControlRepositoryBranchesInput,
+  type SourceControlRepositoryBranchesResult,
   SourceControlProviderError,
   SourceControlRepositoryError,
   type SourceControlCloneRepositoryInput,
@@ -37,6 +41,12 @@ const isBitbucketRepositoryLocatorError = Schema.is(BitbucketApi.BitbucketReposi
 export class SourceControlRepositoryService extends Context.Service<
   SourceControlRepositoryService,
   {
+    readonly listRepositories: (
+      input: SourceControlRepositoryDirectoryInput,
+    ) => Effect.Effect<SourceControlRepositoryDirectoryResult, SourceControlRepositoryError>;
+    readonly listBranches: (
+      input: SourceControlRepositoryBranchesInput,
+    ) => Effect.Effect<SourceControlRepositoryBranchesResult, SourceControlRepositoryError>;
     readonly lookupRepository: (
       input: SourceControlRepositoryLookupInput,
     ) => Effect.Effect<SourceControlRepositoryInfo, SourceControlRepositoryError>;
@@ -203,6 +213,31 @@ export const make = Effect.gen(function* () {
       repository: input.repository.trim(),
     });
     return toRepositoryInfo(providerKind, urls);
+  });
+
+  const listRepositories = Effect.fn("SourceControlRepositoryService.listRepositories")(function* (
+    input: SourceControlRepositoryDirectoryInput,
+  ) {
+    const provider = yield* providers.get(input.provider);
+    if (!provider.listRepositories)
+      return yield* new SourceControlRepositoryError({
+        provider: input.provider,
+        operation: "listRepositories",
+        detail: "This provider does not support browsing repositories.",
+      });
+    return yield* provider.listRepositories(input);
+  });
+  const listBranches = Effect.fn("SourceControlRepositoryService.listBranches")(function* (
+    input: SourceControlRepositoryBranchesInput,
+  ) {
+    const provider = yield* providers.get(input.provider);
+    if (!provider.listBranches)
+      return yield* new SourceControlRepositoryError({
+        provider: input.provider,
+        operation: "listBranches",
+        detail: "This provider does not support browsing platform branches.",
+      });
+    return yield* provider.listBranches(input);
   });
 
   const normalizeDestinationPath = Effect.fn("SourceControlRepositoryService.normalizeDestination")(
@@ -462,6 +497,10 @@ export const make = Effect.gen(function* () {
   );
 
   return SourceControlRepositoryService.of({
+    listRepositories: (input) =>
+      listRepositories(input).pipe(mapRepositoryError("listRepositories", input.provider)),
+    listBranches: (input) =>
+      listBranches(input).pipe(mapRepositoryError("listBranches", input.provider)),
     lookupRepository: (input) =>
       lookupRepository(input).pipe(mapRepositoryError("lookupRepository", input.provider)),
     prepareClone: (input) =>

@@ -51,6 +51,8 @@ describe("Codeup MR creation", () => {
         TestHost.layer(),
         FileSystem.layerNoop({ readFileString: () => Effect.succeed("Description") }),
         Layer.succeed(Api.CodeupApi, {
+          listRepositories: () => Effect.die("unexpected directory call"),
+          listBranches: () => Effect.die("unexpected branch call"),
           probe: Effect.succeed([]),
           getRepository: () => Effect.succeed(repository),
           request: (request) => {

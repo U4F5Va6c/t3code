@@ -282,3 +282,16 @@ describe("summarizeT3ToolCalls", () => {
     });
   });
 });
+
+it("summarizes directory page reads without claiming a complete repository inventory", () => {
+  expect(
+    summarizeT3ToolCalls("source-control-repositories", [
+      completed({}, { repositories: [], nextPage: 2 }),
+    ]).label,
+  ).toBe("Browsed repositories 1 time");
+  expect(
+    summarizeT3ToolCalls("source-control-branches", [
+      completed({}, { branches: [], nextPage: null }),
+    ]).label,
+  ).toBe("Read repository branches 1 time");
+});

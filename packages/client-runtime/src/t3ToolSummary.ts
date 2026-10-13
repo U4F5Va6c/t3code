@@ -308,6 +308,12 @@ export function summarizeT3ToolCalls(
     case "worktree-status":
       label = phrase("Checked", "check", `worktree status ${times}`);
       break;
+    case "source-control-repositories":
+      label = phrase("Browsed", "browse", `repositories ${times}`);
+      break;
+    case "source-control-branches":
+      label = phrase("Read", "read", `repository branches ${times}`);
+      break;
     case "project-list":
       label = phrase("Listed", "list", `projects ${times}`);
       break;

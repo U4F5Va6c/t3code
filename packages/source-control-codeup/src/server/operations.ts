@@ -1,5 +1,10 @@
 /** Central Edition routes and CLI names from the official OpenAPI schema. */
 export const operations = {
+  ListBranches: {
+    method: "GET",
+    path: "/codeup/organizations/{organizationId}/repositories/{repositoryId}/branches",
+    cli: "codeup-list-branches",
+  },
   GetRepository: {
     method: "GET",
     path: "/codeup/organizations/{organizationId}/repositories/{repositoryId}",

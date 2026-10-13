@@ -43,6 +43,8 @@ export type T3McpToolSummaryAction =
   | "worktree-handoff"
   | "worktree-list"
   | "worktree-status"
+  | "source-control-repositories"
+  | "source-control-branches"
   | "project-list"
   | "project-read"
   | "project-create"
@@ -86,6 +88,14 @@ const T3_MCP_SERVER_ALIASES = new Set(["t3-code", "t3_code", "t3code"]);
 
 // Cards, activity rows, summaries, and provider identity recovery share this inventory.
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
+  t3_source_control_repositories: tool(
+    ["Browse", "Browsing", "Browsed", "repositories"],
+    "source-control-repositories",
+  ),
+  t3_source_control_branches: tool(
+    ["Read", "Reading", "Read", "repository branches"],
+    "source-control-branches",
+  ),
   link_pull_request: tool(
     ["Link", "Linking", "Linked", "a pull request"],
     "link-pr",
