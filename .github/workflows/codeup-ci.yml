@@ -93,6 +93,7 @@ jobs:
         run: >-
           vp test run
           apps/server/src/pullRequest/PullRequestService.test.ts
+          apps/server/src/pullRequest/PullRequestReviewGuideService.test.ts
           apps/web/src/components/pullRequest/pullRequestList.logic.test.ts
           apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
           apps/web/src/components/pullRequest/pullRequestEditing.logic.test.ts
@@ -114,6 +115,7 @@ jobs:
           apps/server/src/cli/update.test.ts
           apps/desktop/src/updates/DesktopUpdates.test.ts
           apps/web/src/versionSkew.test.ts
+          apps/web/src/state/releases.test.ts
           apps/web/src/components/desktopUpdate.logic.test.ts
           apps/web/src/components/sidebar/updateEverything.logic.test.ts
           apps/mobile/src/features/settings/environment-maintenance.test.ts
