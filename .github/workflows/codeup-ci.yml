@@ -121,9 +121,10 @@ jobs:
         run: node --test .github/scripts/codeup-*.test.cjs
 
   macos-preview:
-    name: Codeup Preview (${{ matrix.arch }})
+    name: Codeup macOS (${{ matrix.arch }})
     needs: resolve
-    if: needs.resolve.outputs.build == 'true'
+    # PRs keep native installer coverage without packaging another full release.
+    if: needs.resolve.outputs.build == 'true' || github.event_name == 'pull_request'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -156,12 +157,14 @@ jobs:
       - name: Verify Fork native installer
         run: vp test run apps/desktop/src/electron/CodeupMacInstaller.test.ts apps/desktop/src/electron/ElectronUpdater.test.ts
       - name: Resolve shared Codeup version
+        if: needs.resolve.outputs.build == 'true'
         env:
           CODEUP_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           echo "CODEUP_VERSION=$CODEUP_VERSION" >> "$GITHUB_ENV"
           node scripts/update-release-package-versions.ts "$CODEUP_VERSION"
       - name: Build isolated acceptance app
+        if: needs.resolve.outputs.build == 'true'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           # The preview explicitly uses identity "-" (ad-hoc), without signing credentials.
@@ -173,6 +176,7 @@ jobs:
           shasum -a 256 artifacts/*.dmg > artifacts/SHA256SUMS.txt
           git rev-parse HEAD > artifacts/COMMIT.txt
       - name: Verify app inside DMG
+        if: needs.resolve.outputs.build == 'true'
         run: |
           preview_dmgs=(artifacts/*.dmg)
           test "${#preview_dmgs[@]}" -eq 1
@@ -188,7 +192,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$preview_app/Contents/Info.plist")" = 'io.github.u4f5va6c.t3code.codeup-preview'
           ELECTRON_RUN_AS_NODE=1 "$preview_app/Contents/MacOS/T3 Code (Codeup Preview)" -e 'if (!process.versions.electron) process.exit(1); console.log(`Packaged Electron ${process.versions.electron} (${process.arch}) started`)' | tee -a "$preview_report"
       - name: Build Mac standalone backend
-        if: matrix.arch == 'arm64'
+        if: needs.resolve.outputs.build == 'true' && matrix.arch == 'arm64'
         env:
           VP_NODE_VERSION: "26.8.2"
         run: |
@@ -200,7 +204,7 @@ jobs:
           shasum -a 256 release-cli/*.tar.gz > release-cli/SHA256SUMS.txt
           git rev-parse HEAD > release-cli/COMMIT.txt
       - name: Upload Mac standalone backend
-        if: matrix.arch == 'arm64'
+        if: needs.resolve.outputs.build == 'true' && matrix.arch == 'arm64'
         uses: actions/upload-artifact@v7
         with:
           name: codeup-preview-cli-darwin-arm64-${{ needs.resolve.outputs.sha }}
@@ -209,6 +213,7 @@ jobs:
           retention-days: 30
           compression-level: 0
       - name: Upload DMG and checksum
+        if: needs.resolve.outputs.build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: codeup-preview-macos-${{ matrix.arch }}-${{ needs.resolve.outputs.sha }}

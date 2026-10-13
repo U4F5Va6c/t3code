@@ -15,7 +15,7 @@ Codeup 原生适配的上游基线记录在 [codeup-upstream.json](../../.github
 
 `Codeup Nightly Sync` 每 6 小时检查官方**已发布的 Nightly tag**，也支持 Actions 手动触发和 dry run。始终复用 `sync/upstream-nightly` 的一个 PR；数天未合并时，新 Nightly 更新同一 PR 并重新检查，无需逐个合并中间版本。冲突会保留原远程分支，在 PR（首次同步则 #15）报告，并上传 patch；不会强推。默认人工合并。若选择自动合并，设置 Actions variable `CODEUP_AUTO_MERGE=true`；同步 CI 成功后，工作流通过受保护的合并 API 合入确切 SHA，再显式触发集成分支发布。它仍受必需检查及评审保护约束；未满足门槛会等待下次检查。
 
-定时工作流必须已合入默认分支。仓库 Actions 设置需允许创建 PR，默认 token 保持只读，写权限仅授予同步及发布 job。机器人创建 PR 后显式 dispatch Codeup CI，避免 `GITHUB_TOKEN` 的事件抑制导致无检查。新增上游工作流仍须保持禁用。
+定时工作流必须已合入默认分支。仓库 Actions 设置需允许创建 PR，默认 token 保持只读，写权限仅授予同步及发布 job。`GITHUB_TOKEN` 创建或更新 PR 会触发待批准的 Codeup CI；在 PR 页面选择 **Approve workflows to run** 后继续，不再额外 dispatch 一轮检查。自动合并只接受当前 PR head 的 PR 事件 CI 成功；合并后的 token push 仍不会触发工作流，因此保留集成分支的显式发布 dispatch。新增上游工作流仍须保持禁用。
 
 人工同步先确保工作区干净，记录当前 Fork 提交，确认本次 Nightly tag，再执行：
 
@@ -69,12 +69,12 @@ vp run dev --home-dir "$PWD/.t3-codeup-dev"
 
 按根 AGENTS.md 运行改动范围内的 tests、lint、typecheck；全仓检查由配置好的 CI 承担。新增 Provider 应覆盖身份/URL、多页/限流、未知状态、写请求超时、MR SHA 与 CI 不匹配、多组织隔离；共享代码变化还需验证原有 GitHub 行为及受影响的移动类型/兼容路径。发布前验证 Web、桌面、目标机器上的 Agent 及远程连接；本期不要求移动原生功能或真机验收。
 
-Fork 只运行 `codeup-ci.yml` 与 `codeup-sync.yml`。`codeup-integration` 的 PR 与推送执行上游同款 lint、typecheck、Source Control 和更新链路定向测试，使用 GitHub 托管 runner。上游工作流依赖 `blacksmith-*` runner 和发布 secrets，在 Fork 中全部手动禁用；默认 `GITHUB_TOKEN` 只读。web 与 server 大套件按根 AGENTS.md 在本地定向运行。不要导入上游生产 secrets。
+Fork 只运行 `codeup-ci.yml` 与 `codeup-sync.yml`。`codeup-integration` 的 PR 与推送执行上游同款 lint、typecheck、Source Control 和更新链路定向测试，使用 GitHub 托管 runner。PR 还在 macOS arm64/x64 执行原生安装器测试，但不生成整套安装包；合并后的提交才完整打包、校验和发布。涉及打包配置的改动应先手动运行 Codeup CI 验收制品。上游工作流依赖 `blacksmith-*` runner 和发布 secrets，在 Fork 中全部手动禁用；默认 `GITHUB_TOKEN` 只读。web 与 server 大套件按根 AGENTS.md 在本地定向运行。不要导入上游生产 secrets。
 
 ## macOS Codeup Preview
 
-Codeup CI 从同一 SHA 构建 Apple Silicon（arm64）和 Intel（x64）的 DMG/ZIP，以及 Mac arm64、Linux x64 独立后端。基础版本取自已合入的上游 Nightly tag，版本为 `X.Y.Z-codeup.<提交日期>.<Actions run ID>`；run ID 跨工作流递增，重试保持原版本。图标、启动素材和星空背景复用 Nightly，应用身份保持独立。
-在该 PR 的 Actions 运行中下载对应 `codeup-preview-macos-*` artifact，解压后核对
+需要合并前的安装包时，在 Actions 手动运行 Codeup CI 并选择 PR 分支。Codeup CI 从同一 SHA 构建 Apple Silicon（arm64）和 Intel（x64）的 DMG/ZIP，以及 Mac arm64、Linux x64 独立后端。基础版本取自已合入的上游 Nightly tag，版本为 `X.Y.Z-codeup.<提交日期>.<Actions run ID>`；run ID 跨工作流递增，重试保持原版本。图标、启动素材和星空背景复用 Nightly，应用身份保持独立。
+在该次手动 Actions 运行中下载对应 `codeup-preview-macos-*` artifact，解压后核对
 `COMMIT.txt` 与 PR head、`SHA256SUMS.txt` 与 DMG。制品保留 30 天。
 
 安装为 **T3 Code (Codeup Preview).app**，可与原版同时存在：
@@ -83,7 +83,7 @@ Codeup CI 从同一 SHA 构建 Apple Silicon（arm64）和 Intel（x64）的 DMG
 - Chromium 配置：`~/Library/Application Support/t3code-codeup-preview`，不与原版共用运行中的 profile；主题和字体等设备偏好可通过设置对齐。
 - 服务端数据：`~/.t3-codeup-preview`；忽略继承的 `T3CODE_HOME` 和固定端口配置。
 - 专用协议：`t3code-codeup-preview://`，不接管原版链接和默认浏览器。
-- 正式 Fork 构建使用固定 `codeup` 更新通道，只查询本 Fork。普通 PR 包不带更新源；手动 dispatch Codeup CI 并选择 `release_candidate` 可生成带更新配置的测试包，其 `codeup-test-*` Release 不进入更新通道。
+- 正式 Fork 构建使用固定 `codeup` 更新通道，只查询本 Fork。手动构建默认只上传无更新源的验收 artifact；选择 `release_candidate` 可生成带更新配置的测试包，其 `codeup-test-*` Release 不进入更新通道。
 
 应用使用 ad-hoc 本地签名，CI 会挂载最终 DMG 校验签名并启动包内 Electron；没有 Developer ID 签名或 Apple 公证。检查和下载复用 electron-updater；在应用内确认安装后，Fork 专用安装器校验 ZIP 摘要、应用身份、版本、签名完整性与架构，正常退出客户端后替换其 app 并重新打开。它不使用 Squirrel.Mac 的跨构建 cdhash 匹配，也不移除 quarantine 或关闭 Gatekeeper。发布真实性来自固定的 Fork HTTPS 更新源与清单；这不等同于 Apple 公证。
 

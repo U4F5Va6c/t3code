@@ -91,14 +91,20 @@ function fixture() {
         },
       },
       actions: {
-        listWorkflowRuns: async ({ head_sha, branch }) => ({
+        listWorkflowRuns: async ({ head_sha, branch, event }) => ({
           data: {
-            workflow_runs: runs.filter((r) => r.head_sha === head_sha && r.head_branch === branch),
+            workflow_runs: runs.filter(
+              (r) =>
+                r.head_sha === head_sha &&
+                r.head_branch === branch &&
+                (!event || r.event === event),
+            ),
           },
         }),
         createWorkflowDispatch: async ({ ref }) => {
           dispatches++;
           runs.unshift({
+            event: "workflow_dispatch",
             head_sha: command(work, "rev-parse", `origin/${ref}`),
             head_branch: ref,
             conclusion: null,
@@ -137,18 +143,18 @@ function fixture() {
 const context = { repo: { owner: "U4F5Va6c", repo: "t3code" } };
 const core = { info() {} };
 
-test("repeated checks reuse one PR, fast-forward pushes, and skip duplicate builds", async () => {
+test("PR creation and repeated checks never dispatch while the PR event is registering", async () => {
   const f = fixture();
   try {
     f.addNightly(1);
     assert.equal((await sync({ ...f, context, core })).status, "updated");
     const firstHead = f.run("rev-parse", "HEAD");
     assert.equal((await sync({ ...f, context, core })).status, "unchanged");
-    assert.deepEqual(f.counts(), { creates: 1, dispatches: 1 });
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 0 });
     f.addNightly(2);
     assert.equal((await sync({ ...f, context, core })).status, "updated");
     f.run("merge-base", "--is-ancestor", firstHead, "HEAD");
-    assert.deepEqual(f.counts(), { creates: 1, dispatches: 2 });
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 0 });
     assert.ok(
       f.calls
         .filter((args) => args[0] === "push")
@@ -156,7 +162,7 @@ test("repeated checks reuse one PR, fast-forward pushes, and skip duplicate buil
     );
     f.run("push", "origin", "HEAD:codeup-integration");
     assert.equal((await sync({ ...f, context, core })).status, "current");
-    assert.deepEqual(f.counts(), { creates: 1, dispatches: 2 });
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 0 });
   } finally {
     f.cleanup();
   }
@@ -180,24 +186,26 @@ test("conflicts leave the remote untouched and preserve a patch and report", asy
   }
 });
 
-test("retries a failed dispatch without opening another PR", async () => {
+test("retries a failed release dispatch after the Nightly has already merged", async () => {
   const f = fixture();
   try {
     f.addNightly(1);
+    await sync({ ...f, context, core });
+    f.run("push", "origin", "HEAD:codeup-integration");
     const dispatch = f.github.rest.actions.createWorkflowDispatch;
     f.github.rest.actions.createWorkflowDispatch = async () => {
       throw Error("dispatch unavailable");
     };
-    await assert.rejects(sync({ ...f, context, core }), /dispatch unavailable/);
+    await assert.rejects(sync({ ...f, context, core, autoMerge: true }), /dispatch unavailable/);
     f.github.rest.actions.createWorkflowDispatch = dispatch;
-    await sync({ ...f, context, core });
+    await sync({ ...f, context, core, autoMerge: true });
     assert.deepEqual(f.counts(), { creates: 1, dispatches: 1 });
   } finally {
     f.cleanup();
   }
 });
 
-test("automatic merge waits for successful CI and explicitly dispatches the merged commit", async () => {
+test("automatic merge requires approved PR CI, not a successful manual preview", async () => {
   const f = fixture();
   try {
     f.addNightly(1);
@@ -210,13 +218,23 @@ test("automatic merge waits for successful CI and explicitly dispatches the merg
     };
     await sync({ ...f, context, core, autoMerge: true });
     assert.equal(merges, 0);
-    f.runs[0].conclusion = "success";
+    const prRun = {
+      event: "pull_request",
+      head_sha: f.run("rev-parse", "HEAD"),
+      head_branch: "sync/upstream-nightly",
+      conclusion: "action_required",
+    };
+    f.runs.push({ ...prRun, event: "workflow_dispatch", conclusion: "success" }, prRun);
+    await sync({ ...f, context, core, autoMerge: true });
+    assert.equal(merges, 0);
+    assert.equal(f.counts().dispatches, 0);
+    prRun.conclusion = "success";
     await sync({ ...f, context, core, autoMerge: true });
     assert.equal(merges, 1);
-    assert.deepEqual(f.counts(), { creates: 1, dispatches: 2 });
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 1 });
     assert.equal(f.runs[0].head_branch, "codeup-integration");
     await sync({ ...f, context, core, autoMerge: true });
-    assert.deepEqual(f.counts(), { creates: 1, dispatches: 2 });
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 1 });
   } finally {
     f.cleanup();
   }

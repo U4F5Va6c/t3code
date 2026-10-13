@@ -4,7 +4,8 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { assemble, publish } = require("./codeup-release.cjs");
+const { execFileSync } = require("node:child_process");
+const { resolve, assemble, publish } = require("./codeup-release.cjs");
 
 const metadata = {
   version: "0.0.46-codeup.20261013.42",
@@ -12,6 +13,66 @@ const metadata = {
   upstream: { tag: "v0.0.46-nightly.20261012.3021", sha: "b".repeat(40) },
   runUrl: "https://github.com/U4F5Va6c/t3code/actions/runs/42",
 };
+
+test("PRs validate provenance without packaging; pushes and manual previews package only unpublished commits", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codeup-resolve-"));
+  const original = process.cwd();
+  const git = (...args) =>
+    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim();
+  try {
+    git("init");
+    git("config", "user.name", "test");
+    git("config", "user.email", "test@example.com");
+    git("commit", "--allow-empty", "-m", "upstream");
+    const upstream = { ...metadata.upstream, sha: git("rev-parse", "HEAD") };
+    await fs.mkdir(path.join(root, ".github"));
+    await fs.writeFile(path.join(root, ".github/codeup-upstream.json"), JSON.stringify(upstream));
+    git("add", ".");
+    git("commit", "-m", "fork");
+    const sha = git("rev-parse", "HEAD");
+    process.chdir(root);
+    const published = {
+      tag_name: "v0.0.46-codeup.20261013.1",
+      target_commitish: sha,
+      assets: [{ name: "codeup-release.json" }],
+    };
+    for (const [eventName, releases, build] of [
+      ["pull_request", [], "false"],
+      ["push", [], "true"],
+      ["workflow_dispatch", [], "true"],
+      ["push", [published], "false"],
+      ["workflow_dispatch", [published], "false"],
+      ["push", [{ ...published, draft: true }], "true"],
+      ["push", [{ ...published, tag_name: "codeup-test-0.0.46-codeup.20261013.1" }], "true"],
+    ]) {
+      const outputs = {};
+      const result = await resolve({
+        github: {
+          paginate: async () => releases,
+          rest: {
+            repos: {
+              getReleaseByTag: async () => ({ data: { published_at: "2026-10-13T00:00:00Z" } }),
+              getCommit: async () => ({ data: { sha: upstream.sha } }),
+            },
+          },
+        },
+        context: { repo: { owner: "U4F5Va6c", repo: "t3code" }, eventName, runId: 42 },
+        core: {
+          setOutput: (name, value) => {
+            outputs[name] = value;
+          },
+        },
+      });
+      assert.equal(outputs.build, build, `${eventName}: ${JSON.stringify(releases)}`);
+      assert.equal(outputs.sha, sha);
+      assert.equal(result.forkSha, sha);
+      assert.deepEqual(JSON.parse(await fs.readFile("codeup-build.json", "utf8")), result);
+    }
+  } finally {
+    process.chdir(original);
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
 
 async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codeup-release-"));
