@@ -7,7 +7,6 @@ import {
 import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import * as Tracer from "effect/Tracer";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { AsyncResult, Atom } from "effect/reactivity";
 
@@ -26,7 +25,7 @@ const decodeReleases = Schema.decodeUnknownEffect(Schema.Array(Release));
  * A 404 is false; network errors stay unknown. Re-check every few minutes, so a release
  * that lands later shows up without a reload.
  */
-const releasePublishedAtom = Atom.family((version: string) =>
+export const releasePublishedAtom = Atom.family((version: string) =>
   Atom.make(
     Effect.gen(function* () {
       const response = yield* HttpClient.get(
@@ -48,8 +47,9 @@ const releasePublishedAtom = Atom.family((version: string) =>
         ? body.version === version
         : false;
     }).pipe(
+      // Tracing headers would make the browser send a CORS preflight, which npm rejects.
+      Effect.provideService(HttpClient.TracerPropagationEnabled, false),
       Effect.provide(FetchHttpClient.layer),
-      Effect.provideService(Tracer.DisablePropagation, true),
     ),
   ).pipe(
     Atom.withRefresh("5 minutes"),
@@ -78,8 +78,8 @@ export const codeupReleaseAtom = Atom.make(
     const releases = yield* decodeReleases(body);
     return newestCliReleaseVersion(releases, "codeup") ?? null;
   }).pipe(
+    Effect.provideService(HttpClient.TracerPropagationEnabled, false),
     Effect.provide(FetchHttpClient.layer),
-    Effect.provideService(Tracer.DisablePropagation, true),
   ),
 ).pipe(Atom.withRefresh("5 minutes"), Atom.keepAlive);
 
