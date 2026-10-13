@@ -97,7 +97,7 @@ export function RepositoryDirectory({
   return (
     <section
       aria-label="Codeup repository directory"
-      className="space-y-3 border-t px-4 py-3"
+      className="max-h-[min(20rem,50vh)] space-y-3 overflow-y-auto border-t px-4 py-3"
       onKeyDown={(event) => event.stopPropagation()}
     >
       <div className="text-sm font-medium">Browse Codeup repositories</div>
