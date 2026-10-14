@@ -589,3 +589,177 @@ describe("Codeup repository directory", () => {
     }).pipe(Effect.provide(layer));
   });
 });
+
+describe("ProjeX boundaries", () => {
+  it.effect("sends project and search pagination in the HTTP JSON body", () => {
+    const bodies: unknown[] = [];
+    const { layer } = harness((r) => {
+      expect(r.method).toBe("POST");
+      expect(r.url).not.toContain("?");
+      if (r.body._tag === "Uint8Array")
+        bodies.push(JSON.parse(new TextDecoder().decode(r.body.body)));
+      return json([]);
+    });
+    return Effect.gen(function* () {
+      const api = yield* CodeupApi.CodeupApi;
+      for (const operation of ["ProjexProjects", "ProjexSearch"] as const)
+        yield* api.request({ organizationId: "org-a", operation, body: { page: 2, perPage: 1 } });
+      expect(bodies).toEqual([
+        { page: 2, perPage: 1 },
+        { page: 2, perPage: 1 },
+      ]);
+    }).pipe(Effect.provide(layer));
+  });
+  it.effect("uses separate CLI array arguments for create and one biz-body for updates", () => {
+    const calls: ReadonlyArray<string>[] = [];
+    const layer = CodeupApi.layer.pipe(
+      Layer.provide(
+        TestSourceControlHost.layer({
+          process: {
+            run: (r) => {
+              calls.push(r.args);
+              return Effect.succeed(TestSourceControlHost.processOutput("{}"));
+            },
+          },
+        }),
+      ),
+      Layer.provide(Layer.succeed(HostProcess.Environment, {})),
+      Layer.provide(
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make(() => Effect.die("unexpected HTTP")),
+        ),
+      ),
+    );
+    return Effect.gen(function* () {
+      const api = yield* CodeupApi.CodeupApi;
+      yield* api.request({
+        organizationId: "org",
+        operation: "ProjexCreate",
+        body: { labels: ["a", "b"], customFieldValues: { field: "a,b" } },
+      });
+      yield* api.request({
+        organizationId: "org",
+        operation: "ProjexUpdate",
+        params: { id: "item" },
+        body: { labels: ["a", "b"] },
+      });
+      expect(calls[0]).toContain("--labels");
+      expect(
+        calls[0]?.slice(calls[0].indexOf("--labels") + 1, calls[0].indexOf("--labels") + 3),
+      ).toEqual(["a", "b"]);
+      expect(calls[1]?.at(-2)).toBe("--biz-body");
+      expect(JSON.parse(calls[1]!.at(-1)!)).toEqual({ labels: ["a", "b"] });
+    }).pipe(Effect.provide(layer));
+  });
+  it.effect(
+    "runs fixed credential-wrapper workflow code with encoded identifiers, rejects redirects and never prints PAT",
+    () =>
+      Effect.gen(function* () {
+        let script = "";
+        let args: readonly string[] = [];
+        const layer = CodeupApi.layer.pipe(
+          Layer.provide(
+            TestSourceControlHost.layer({
+              process: {
+                run: (r) => {
+                  expect(r.command).toBe("aliyun-devops");
+                  args = r.args;
+                  script = r.args[4]!;
+                  return Effect.succeed(TestSourceControlHost.processOutput('{"statuses":[]}'));
+                },
+              },
+            }),
+          ),
+          Layer.provide(Layer.succeed(HostProcess.Environment, {})),
+          Layer.provide(
+            Layer.succeed(
+              HttpClient.HttpClient,
+              HttpClient.make(() => Effect.die("unexpected HTTP")),
+            ),
+          ),
+        );
+        yield* CodeupApi.CodeupApi.pipe(
+          Effect.flatMap((api) =>
+            api.request({
+              organizationId: "org/escape",
+              operation: "ProjexItemWorkflow",
+              params: { id: "../item" },
+            }),
+          ),
+          Effect.provide(layer),
+        );
+        expect(args[0]).toBe("--exec");
+        expect(args.slice(-2)).toEqual(["org/escape", "../item"]);
+        // Execute the exact wrapper program with a fake network and process, without credentials or IO.
+        const run = async (mode: "ok" | "redirect" | "echo") => {
+          let stdout = "";
+          let seen = "";
+          const token = "test-private-token";
+          const exits: number[] = [];
+          const process = {
+            argv: ["node", "org/escape", "../item"],
+            env: { ALIBABA_CLOUD_YUNXIAO_ACCESS_TOKEN: token },
+            stdout: {
+              write: (v: string) => {
+                stdout += v;
+              },
+            },
+            exit: (code: number) => {
+              exits.push(code);
+              throw new Error("exit");
+            },
+          };
+          const fetch = async (url: string, init: RequestInit) => {
+            seen = url;
+            expect(init.redirect).toBe("error");
+            expect(init.method).toBe("GET");
+            expect(init.headers).toMatchObject({ "x-yunxiao-token": token });
+            if (mode === "redirect") throw new Error("redirect blocked");
+            return new Response(JSON.stringify(mode === "echo" ? { token } : { statuses: [] }));
+          };
+          const execute = new Function(
+            "process",
+            "fetch",
+            "Buffer",
+            "TextDecoder",
+            "AbortSignal",
+            `return (async()=>{${script}})()`,
+          );
+          try {
+            await execute(process, fetch, Buffer, TextDecoder, AbortSignal);
+          } catch {}
+          expect(seen).toBe(
+            "https://openapi-rdc.aliyuncs.com/oapi/v1/projex/organizations/org%2Fescape/workitems/..%2Fitem/workflow",
+          );
+          expect(stdout).not.toContain(token);
+          if (mode === "ok") expect(JSON.parse(stdout)).toEqual({ statuses: [] });
+          else {
+            expect(stdout).toBe("");
+            expect(exits.length).toBeGreaterThan(0);
+          }
+        };
+        yield* Effect.promise(async () => {
+          await run("ok");
+          await run("redirect");
+          await run("echo");
+        });
+      }),
+  );
+});
+it.effect("refuses unexpected pagination on relation reads that must be complete", () => {
+  const { layer } = harness(() => new Response("[]", { headers: { "x-total": "20" } }));
+  return Effect.gen(function* () {
+    const api = yield* CodeupApi.CodeupApi;
+    expect(
+      (yield* api
+        .request({
+          organizationId: "org-a",
+          operation: "ProjexRelations",
+          params: { id: "item" },
+          requireUnpaginated: true,
+        })
+        .pipe(Effect.result))._tag,
+    ).toBe("Failure");
+  }).pipe(Effect.provide(layer));
+});

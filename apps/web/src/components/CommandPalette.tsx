@@ -2224,6 +2224,17 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push({
     kind: "action",
+    value: "action:work-items",
+    searchTerms: ["work items", "projex", "tasks", "bugs", "requirements"],
+    title: "Open work items",
+    icon: <ChartNoAxesColumnIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/work-items" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
     value: "action:usage",
     searchTerms: ["usage", "use", "tokens", "cost", "spend", "limits", "stats", "analytics"],
     title: "Open usage",

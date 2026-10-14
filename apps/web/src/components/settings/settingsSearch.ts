@@ -692,6 +692,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
+    id: "agent-work-items-access",
+    title: "Agent work item access",
+    to: "/settings/integrations",
+    scope: "project-defaults",
+    searchTerms: [
+      "projex yunxiao requirements bugs tasks permission enable disable project override",
+    ],
+  },
+  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/integrations",

@@ -4,6 +4,8 @@ import { assert, it } from "@effect/vitest";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import {
   EnvironmentId,
+  DEFAULT_SERVER_SETTINGS,
+  ServerSettingsError,
   type ModelSelection,
   type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
@@ -607,6 +609,8 @@ function runBrowserAccessScenario(input: {
   readonly enableAgentBrowserAccess: boolean;
   readonly projectOverride: boolean;
   readonly deviceOverride?: boolean;
+  readonly workItemsOverride?: boolean;
+  readonly enableAgentWorkItemsAccess?: boolean;
   readonly createThread?: boolean;
   readonly projectExists?: boolean;
 }) {
@@ -652,9 +656,13 @@ function runBrowserAccessScenario(input: {
           projectServiceLayer: layerProjectService,
           serverSettingsLayer: ServerSettings.layerTest({
             enableAgentBrowserAccess: input.enableAgentBrowserAccess,
+            enableAgentWorkItemsAccess: input.enableAgentWorkItemsAccess ?? false,
             projectSettingsOverrides: {
               [projectId]: {
                 enableAgentBrowserAccess: input.projectOverride,
+                ...(input.workItemsOverride === undefined
+                  ? {}
+                  : { enableAgentWorkItemsAccess: input.workItemsOverride }),
                 ...(input.deviceOverride === undefined
                   ? {}
                   : { enableAgentDeviceAccess: input.deviceOverride }),
@@ -4721,5 +4729,104 @@ it.effect(
         projectExists: false,
       });
       assert.isFalse(denied?.capabilities?.has("device"));
+    }),
+);
+it.effect(
+  "ProviderSessionManagerV2 work-item access requires explicit settings and honors project overrides",
+  () =>
+    Effect.gen(function* () {
+      for (const [environment, override, exists, expected] of [
+        [false, undefined, true, false],
+        [false, true, true, true],
+        [true, false, true, false],
+        [true, undefined, true, true],
+        [true, true, false, false],
+      ] as const) {
+        const captured = yield* runBrowserAccessScenario({
+          enableAgentBrowserAccess: false,
+          projectOverride: false,
+          enableAgentWorkItemsAccess: environment,
+          ...(override === undefined ? {} : { workItemsOverride: override }),
+          projectExists: exists,
+        });
+        assert.equal(captured?.capabilities?.has("work-items"), expected);
+      }
+    }),
+);
+it.effect(
+  "ProviderSessionManagerV2 rotates work-item credentials on opt-in, revocation and unreadable settings",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const mcpConfigs = yield* Ref.make<
+        ReadonlyArray<McpProviderSession.McpProviderSessionConfig | undefined>
+      >([]);
+      let enabled = false,
+        unreadable = false;
+      const settingsLayer = Layer.mock(ServerSettings.ServerSettingsService)({
+        getSettings: Effect.suspend(() =>
+          unreadable
+            ? Effect.fail(
+                new ServerSettingsError({
+                  settingsPath: "test",
+                  operation: "read-file",
+                  cause: "unreadable",
+                }),
+              )
+            : Effect.succeed({ ...DEFAULT_SERVER_SETTINGS, enableAgentWorkItemsAccess: enabled }),
+        ),
+      });
+      const projects = Layer.mock(ProjectService.ProjectService)({
+        getById: (id) => Effect.succeed(Option.some(makeBrowserAccessProject(id))),
+      });
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2,
+          idAllocator = yield* IdAllocator.IdAllocatorV2,
+          manager = yield* ProviderSessionManager.ProviderSessionManagerV2,
+          registry = yield* McpSessionRegistry.McpSessionRegistry,
+          sessions = yield* McpProviderSessions.McpProviderSessions;
+        const threadId = ThreadId.make("work-items-rotation"),
+          now = yield* DateTime.now;
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        const open = manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        yield* open;
+        const initial = (yield* sessions.read(threadId))!;
+        let previousToken = initial.authorizationHeader.replace(/^Bearer\s+/, "");
+        assert.isFalse((yield* registry.resolve(previousToken))?.capabilities.has("work-items"));
+        for (const [nextEnabled, failRead, expected] of [
+          [true, false, true],
+          [false, false, false],
+          [true, false, true],
+          [true, true, false],
+        ] as const) {
+          yield* manager.detach({ providerSessionId, threadId });
+          enabled = nextEnabled;
+          unreadable = failRead;
+          yield* open;
+          const current = (yield* sessions.read(threadId))!,
+            token = current.authorizationHeader.replace(/^Bearer\s+/, "");
+          assert.notEqual(token, previousToken);
+          assert.isUndefined(yield* registry.resolve(previousToken));
+          assert.equal((yield* registry.resolve(token))?.capabilities.has("work-items"), expected);
+          previousToken = token;
+        }
+        yield* manager.close(providerSessionId);
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 1000,
+            mcpConfigs,
+            serverSettingsLayer: settingsLayer,
+            projectServiceLayer: projects,
+          }),
+        ),
+      );
     }),
 );

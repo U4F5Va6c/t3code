@@ -92,6 +92,16 @@ jobs:
       - name: Test Codeup integration boundaries
         run: >-
           vp test run
+          apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
+          apps/server/src/mcp/McpSessionRegistry.test.ts
+          apps/server/src/workItems/WorkItemsService.test.ts
+          apps/server/src/workItems/WorkItemsRpc.test.ts
+          apps/server/src/persistence/WorkItemCreationReceiptRepository.test.ts
+          apps/server/src/mcp/toolkits/workItems/handlers.test.ts
+          apps/server/src/auth/EnvironmentAuth.test.ts
+          apps/server/src/auth/McpOAuth.test.ts
+          apps/server/src/mcp/toolkits/worktree/registration.test.ts
+          apps/web/src/components/workItems/workItemForm.test.ts
           apps/server/src/pullRequest/PullRequestService.test.ts
           apps/server/src/pullRequest/PullRequestReviewGuideService.test.ts
           apps/server/src/mcp/toolkits/pullRequests/handlers.test.ts
@@ -125,6 +135,9 @@ jobs:
           apps/web/src/components/desktopUpdate.logic.test.ts
           apps/web/src/components/sidebar/updateEverything.logic.test.ts
           apps/mobile/src/features/settings/environment-maintenance.test.ts
+      - name: Test compiled work item interactions
+        working-directory: apps/web
+        run: vp test run --project unit src/components/workItems/workItemForm.loading.test.ts
       - name: Test Fork sync and atomic release publication
         run: node --test .github/scripts/codeup-*.test.cjs
 

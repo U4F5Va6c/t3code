@@ -414,7 +414,8 @@
     "./pull-request-markdown": {
       "types": "./src/pullRequestMarkdown.ts",
       "default": "./src/pullRequestMarkdown.ts"
-    }
+    },
+    "./state/workItems": "./src/state/workItems.ts"
   },
   "scripts": {
     "typecheck": "tsc-rs --noEmit",

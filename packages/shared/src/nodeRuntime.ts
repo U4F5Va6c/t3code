@@ -8,6 +8,7 @@ import * as HostProcess from "./HostProcess.ts";
 import { CommandResolutionCache, resolveCommandPath } from "./shell.ts";
 
 const NodeRuntimeFeature = Schema.Literals([
+  "ProjeX workflow",
   "Local device support",
   "Device automation",
   "Antigravity",

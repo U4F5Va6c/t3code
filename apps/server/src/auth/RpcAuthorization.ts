@@ -44,6 +44,14 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  */
 export const RPC_REQUIRED_SCOPES = {
   ...CLIENT_GUARDED_RPC_SCOPES,
+  [WS_METHODS.workItemsConnections]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsProjects]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsMetadata]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsSearch]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsGet]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsReceipt]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsReady]: AuthOrchestrationReadScope,
+
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,

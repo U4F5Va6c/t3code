@@ -1184,3 +1184,20 @@ describe("server model preferences", () => {
     });
   });
 });
+
+it("defaults old settings to no agent work-item access and round-trips explicit overrides", () => {
+  expect(decodeServerSettings({}).enableAgentWorkItemsAccess).toBe(false);
+  expect(
+    decodeServerSettings({ enableAgentBrowserAccess: true, enableAgentDeviceAccess: true })
+      .enableAgentWorkItemsAccess,
+  ).toBe(false);
+  for (const enabled of [false, true]) {
+    const value = {
+      enableAgentWorkItemsAccess: enabled,
+      projectSettingsOverrides: { project: { enableAgentWorkItemsAccess: !enabled } },
+    };
+    expect(encodeServerSettings(decodeServerSettings(value))).toMatchObject(value);
+    expect(decodeServerSettingsPatch(value)).toEqual(value);
+  }
+  expect(() => decodeServerSettings({ enableAgentWorkItemsAccess: "true" })).toThrow();
+});
