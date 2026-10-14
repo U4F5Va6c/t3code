@@ -1,3 +1,4 @@
+import * as WorkItemsService from "../../../workItems/WorkItemsService.ts";
 import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
 import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
@@ -41,6 +42,7 @@ import * as PreviewBrowser from "../../../preview/PreviewBrowser.ts";
 const layerStubServices = Layer.mergeAll(
   Layer.mock(ProjectStore.ProjectStoreV2)({}),
   Layer.mock(PullRequestService.PullRequestService)({}),
+  Layer.mock(WorkItemsService.WorkItemsService)({}),
   Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
 
   Layer.mock(Orchestrator.OrchestratorV2)({}),

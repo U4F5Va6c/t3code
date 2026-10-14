@@ -148,6 +148,19 @@ export function summarizeT3ToolCalls(
     case "t3_pull_request_merge":
       label = phrase("Merged", "merge", `pull request ${times}`);
       break;
+    case "t3_work_items_connections":
+    case "t3_work_items_projects":
+    case "t3_work_items_metadata":
+    case "t3_work_items_search":
+    case "t3_work_items_get":
+    case "t3_work_items_create":
+    case "t3_work_items_receipt":
+    case "t3_work_items_recover":
+    case "t3_work_items_update":
+    case "t3_work_items_relate":
+    case "t3_work_items_ready":
+      label = phrase("Processed", "process", `work items ${times}`);
+      break;
     case "t3_pull_request_drafts":
       label = phrase("Read", "read", `review draft ${times}`);
       break;

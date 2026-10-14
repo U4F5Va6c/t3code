@@ -6,6 +6,17 @@ export interface T3McpToolPresentation {
 }
 
 export type T3McpToolSummaryAction =
+  | "t3_work_items_connections"
+  | "t3_work_items_projects"
+  | "t3_work_items_metadata"
+  | "t3_work_items_search"
+  | "t3_work_items_get"
+  | "t3_work_items_create"
+  | "t3_work_items_receipt"
+  | "t3_work_items_recover"
+  | "t3_work_items_update"
+  | "t3_work_items_relate"
+  | "t3_work_items_ready"
   | "t3_source_control_publish"
   | "t3_source_control_lookup"
   | "t3_pull_requests"
@@ -157,6 +168,47 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_pull_request_merge: tool(
     ["Merge", "Merging", "Merged", "pull request"],
     "t3_pull_request_merge",
+  ),
+  t3_work_items_connections: tool(
+    ["Connections", "Processing", "Processed", "work items"],
+    "t3_work_items_connections",
+  ),
+  t3_work_items_projects: tool(
+    ["Projects", "Processing", "Processed", "work items"],
+    "t3_work_items_projects",
+  ),
+  t3_work_items_metadata: tool(
+    ["Metadata", "Processing", "Processed", "work items"],
+    "t3_work_items_metadata",
+  ),
+  t3_work_items_search: tool(
+    ["Search", "Processing", "Processed", "work items"],
+    "t3_work_items_search",
+  ),
+  t3_work_items_get: tool(["Get", "Processing", "Processed", "work items"], "t3_work_items_get"),
+  t3_work_items_create: tool(
+    ["Create", "Processing", "Processed", "work items"],
+    "t3_work_items_create",
+  ),
+  t3_work_items_receipt: tool(
+    ["Receipt", "Processing", "Processed", "work items"],
+    "t3_work_items_receipt",
+  ),
+  t3_work_items_recover: tool(
+    ["Recover", "Processing", "Processed", "work items"],
+    "t3_work_items_recover",
+  ),
+  t3_work_items_update: tool(
+    ["Update", "Processing", "Processed", "work items"],
+    "t3_work_items_update",
+  ),
+  t3_work_items_relate: tool(
+    ["Relate", "Processing", "Processed", "work items"],
+    "t3_work_items_relate",
+  ),
+  t3_work_items_ready: tool(
+    ["Ready", "Processing", "Processed", "work items"],
+    "t3_work_items_ready",
   ),
   t3_pull_request_drafts: tool(
     ["Read", "Reading", "Read", "review draft"],

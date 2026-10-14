@@ -1,3 +1,4 @@
+import * as WorkItemsService from "./workItems/WorkItemsService.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -1239,6 +1240,7 @@ const layerWsRpc = (
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
+      const workItems = yield* WorkItemsService.WorkItemsService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
@@ -2482,6 +2484,17 @@ const layerWsRpc = (
                 Effect.forkScoped,
               ),
           ),
+        [WS_METHODS.workItemsConnections]: (input) => workItems.connections(input),
+        [WS_METHODS.workItemsProjects]: (input) => workItems.projects(input),
+        [WS_METHODS.workItemsMetadata]: (input) => workItems.metadata(input),
+        [WS_METHODS.workItemsSearch]: (input) => workItems.search(input),
+        [WS_METHODS.workItemsGet]: (input) => workItems.get(input),
+        [WS_METHODS.workItemsCreate]: (input) => workItems.create(input),
+        [WS_METHODS.workItemsReceipt]: (input) => workItems.receipt(input),
+        [WS_METHODS.workItemsRecover]: (input) => workItems.recover(input),
+        [WS_METHODS.workItemsUpdate]: (input) => workItems.update(input),
+        [WS_METHODS.workItemsRelate]: (input) => workItems.relate(input),
+        [WS_METHODS.workItemsReady]: (input) => workItems.ready(input),
         [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
         [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
         [WS_METHODS.pullRequestsRoutingIdentity]: (input) => pullRequests.routingIdentity(input),

@@ -1,3 +1,5 @@
+import * as ServerSettings from "../serverSettings.ts";
+import * as WorkItemsService from "../workItems/WorkItemsService.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
@@ -84,6 +86,8 @@ const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
   Layer.provide(
     Layer.mergeAll(
       Layer.mock(PullRequestService.PullRequestService)({}),
+      Layer.mock(WorkItemsService.WorkItemsService)({}),
+      ServerSettings.layerTest({}),
       Layer.mock(GitWorkflowService.GitWorkflowService)({}),
       Layer.mock(ProjectStore.ProjectStoreV2)({}),
       Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),

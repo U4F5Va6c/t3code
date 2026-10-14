@@ -230,6 +230,14 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           ) : null}
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
+            label="Work Items"
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/work-items" });
+            }}
+          />
+          <SidebarUtilityItem
+            icon={<ChartNoAxesColumnIcon />}
             label="Usage"
             onClick={handleUsageClick}
           />

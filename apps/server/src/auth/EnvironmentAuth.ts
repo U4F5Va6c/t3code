@@ -6,6 +6,7 @@ import {
   AuthOrchestrationReadScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
+  AuthWorkItemsWriteScope,
   AuthStandardClientScopes,
   type AuthAccessTokenResult,
   type AuthBrowserSessionResult,
@@ -96,6 +97,7 @@ export const mcpClientScopes = (
           AuthOrchestrationOperateScope,
           AuthSettingsWriteScope,
           AuthSourceControlWriteScope,
+          AuthWorkItemsWriteScope,
         ]
       : [AuthOrchestrationReadScope, AuthOrchestrationOperateScope];
 

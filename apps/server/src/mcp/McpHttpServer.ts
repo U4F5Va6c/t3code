@@ -1,3 +1,5 @@
+import * as WorkItemsHandlers from "./toolkits/workItems/handlers.ts";
+import { WorkItemsToolkit } from "./toolkits/workItems/tools.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -873,7 +875,10 @@ export const layerMcpTransport = McpServer.layerHttp({
   allowSessionTermination: true,
 }).pipe(Layer.provide(layerMcpAuthMiddleware));
 
+const layerWorkItemsToolkit = toolkitRegistration(WorkItemsToolkit, WorkItemsHandlers.layer);
+
 export const layer = Layer.mergeAll(
+  layerWorkItemsToolkit,
   layerPreviewToolkit,
   layerOrchestratorToolkit,
   layerThreadToolkit,

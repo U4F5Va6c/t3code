@@ -1,3 +1,7 @@
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Option from "effect/Option";
+import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
 import {
   type SourceControlRepositoryDirectoryInput,
   type SourceControlRepositoryDirectoryResult,
@@ -101,6 +105,7 @@ export interface CodeupRequest {
   readonly params?: Readonly<Record<string, string | number>>;
   readonly query?: Readonly<Record<string, string | number>>;
   readonly body?: Readonly<Record<string, unknown>>;
+  readonly requireUnpaginated?: boolean;
 }
 
 export class CodeupApi extends Context.Service<
@@ -124,6 +129,8 @@ export class CodeupApi extends Context.Service<
 >()("@t3tools/source-control-codeup/server/CodeupApi") {}
 
 const make = Effect.gen(function* () {
+  const fs = yield* Effect.serviceOption(FileSystem.FileSystem);
+  const pathService = yield* Effect.serviceOption(Path.Path);
   const client = HttpClient.withScope(yield* HttpClient.HttpClient);
   const host = yield* SourceControlHost.SourceControlHost;
   const environment = yield* HostProcess.Environment;
@@ -142,7 +149,8 @@ const make = Effect.gen(function* () {
 
   const request = Effect.fn("CodeupApi.request")(function* (input: CodeupRequest) {
     const spec = operations[input.operation];
-    const saved = yield* tokens;
+    const pinned = yield* PinnedCodeupTokens;
+    const saved = pinned ?? (yield* tokens);
     const organizationId =
       input.organizationId ??
       Object.keys(saved)[0] ??
@@ -184,14 +192,22 @@ const make = Effect.gen(function* () {
           .toLowerCase();
       const args = [
         spec.cli,
-        ...Object.entries({ ...params, ...input.query, ...input.body }).flatMap(([key, value]) => [
-          `--${flag(key)}`,
-          typeof value === "object"
-            ? JSON.stringify(value)
-            : key === "repositoryId"
-              ? encodeURIComponent(String(value))
-              : String(value),
-        ]),
+        ...Object.entries({
+          ...params,
+          ...input.query,
+          ...(input.operation === "ProjexUpdate" ? { bizBody: input.body } : input.body),
+        }).flatMap(([key, value]) =>
+          input.operation === "ProjexCreate" && Array.isArray(value)
+            ? [`--${flag(key)}`, ...value.map(String)]
+            : [
+                `--${flag(key)}`,
+                typeof value === "object"
+                  ? JSON.stringify(value)
+                  : key === "repositoryId"
+                    ? encodeURIComponent(String(value))
+                    : String(value),
+              ],
+        ),
       ];
       const run = (command: string, prefix: ReadonlyArray<string>) =>
         host.process.run({
@@ -205,6 +221,69 @@ const make = Effect.gen(function* () {
           allowNonZeroExit: true,
           env: { ALIBABA_CLOUD_YUNXIAO_API_BASE_URL: CODEUP_API_HOST },
         });
+      if (input.operation === "ProjexItemWorkflow") {
+        if (!organizationId || !input.params?.id) return yield* httpFailure(null);
+        const node = yield* Effect.gen(function* () {
+          if (!(yield* HostProcess.IsExecutable)) return yield* HostProcess.ExecutablePath;
+          if (Option.isNone(fs) || Option.isNone(pathService))
+            return yield* new CodeupApiError({ reason: "not-configured", status: null });
+          return yield* resolveNodeExecutable("ProjeX workflow", environment).pipe(
+            Effect.provideService(FileSystem.FileSystem, fs.value),
+            Effect.provideService(Path.Path, pathService.value),
+          );
+        }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new CodeupApiError({
+                reason: "not-configured",
+                status: null,
+                cause: Redacted.make(cause),
+              }),
+          ),
+        );
+        const result = yield* host.process
+          .run({
+            operation: "CodeupApi.projexWorkflow",
+            command: "aliyun-devops",
+            args: [
+              "--exec",
+              node,
+              "--input-type=module",
+              "-e",
+              PROJEX_WORKFLOW_SCRIPT,
+              organizationId,
+              String(input.params.id),
+            ],
+            cwd: workingDirectory,
+            spawnCwd: workingDirectory,
+            timeoutMs: 30_000,
+            maxOutputBytes: 8 * 1024 * 1024,
+            allowNonZeroExit: true,
+            env: { ALIBABA_CLOUD_YUNXIAO_API_BASE_URL: CODEUP_API_HOST },
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new CodeupApiError({
+                  reason: "not-configured",
+                  status: null,
+                  cause: Redacted.make(cause),
+                }),
+            ),
+          );
+        if (result.exitCode !== 0 || result.stdoutTruncated || result.stdoutInvalidUtf8)
+          return yield* httpFailure(null);
+        return yield* decodeJson(result.stdout).pipe(
+          Effect.mapError(
+            (cause) =>
+              new CodeupApiError({
+                reason: "invalid-response",
+                status: null,
+                cause: Redacted.make(cause),
+              }),
+          ),
+        );
+      }
       const result = yield* run("aliyun-devops", []).pipe(
         Effect.catch((cause) =>
           cause._tag === "VcsProcessSpawnError" &&
@@ -269,6 +348,13 @@ const make = Effect.gen(function* () {
             }),
         ),
       );
+    if (
+      input.requireUnpaginated &&
+      Object.keys(response.headers).some((key) =>
+        /^x-(?:next-page|page|per-page|total|total-pages)$/i.test(key),
+      )
+    )
+      return yield* new CodeupApiError({ reason: "invalid-response", status: response.status });
     if (response.status < 200 || response.status >= 300) {
       return yield* httpFailure(response.status);
     }
@@ -480,3 +566,33 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(CodeupApi, make);
+
+const PROJEX_WORKFLOW_SCRIPT = `
+const [org, id] = process.argv.slice(1);
+const token = process.env.ALIBABA_CLOUD_YUNXIAO_ACCESS_TOKEN;
+if (!token || !org || !id) process.exit(2);
+try {
+ const response = await fetch("https://openapi-rdc.aliyuncs.com/oapi/v1/projex/organizations/" + encodeURIComponent(org) + "/workitems/" + encodeURIComponent(id) + "/workflow", {method:"GET",redirect:"error",signal:AbortSignal.timeout(15000),headers:{"x-yunxiao-token":token,accept:"application/json"}});
+ if (!response.ok || !response.body) process.exit(3);
+ let size=0;const chunks=[];
+ for await (const chunk of response.body) { size+=chunk.length;if(size>8388608)process.exit(4);chunks.push(chunk); }
+ const text=new TextDecoder("utf-8",{fatal:true}).decode(Buffer.concat(chunks));JSON.parse(text);if(text.includes(token))process.exit(6);process.stdout.write(text);
+} catch { process.exit(5); }
+`;
+
+const PinnedCodeupTokens = Context.Reference<Readonly<Record<string, string>> | null>(
+  "CodeupApi/PinnedTokens",
+  { defaultValue: () => null },
+);
+
+/** Snapshot configured credentials for a multi-step ProjeX operation; never return token values. */
+export const withOrganizationCredential = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const host = yield* SourceControlHost.SourceControlHost;
+    const settings = yield* host.settings.get;
+    const tokens = readSourceControlHostSettings(
+      CodeupClient.settings,
+      settings.sourceControlHosts.codeup,
+    ).organizationTokens;
+    return yield* effect.pipe(Effect.provideService(PinnedCodeupTokens, tokens));
+  });

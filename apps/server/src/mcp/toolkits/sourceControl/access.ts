@@ -11,7 +11,7 @@ import { assertFullAccess, assertLiveCaller, loadCaller } from "../../threadAcce
 export const access = Effect.fn("SourceControlMcp.access")(function* (
   method: string,
   write: boolean,
-  capability: "orchestration" | "pull-requests",
+  capability: "orchestration" | "pull-requests" | "work-items",
 ) {
   const scope = yield* McpInvocationContext.requireMcpCapability(capability);
   const environment = yield* ServerEnvironment.ServerEnvironment;
