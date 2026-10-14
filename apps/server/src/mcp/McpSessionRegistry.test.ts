@@ -180,21 +180,3 @@ it.effect("does not keep credentials of other threads alive", () =>
     expect(yield* registry.resolve(token)).toBeUndefined();
   }),
 );
-it.effect(
-  "never grants work-items implicitly, but accepts an explicitly authorized capability",
-  () =>
-    Effect.gen(function* () {
-      const registry = yield* makeRegistry(() => 1000);
-      for (const explicit of [false, true]) {
-        const issued = yield* registry.issue({
-          threadId: ThreadId.make(`work-items-${explicit}`),
-          providerInstanceId: ProviderInstanceId.make("codex"),
-          ...(explicit ? { capabilities: new Set(["work-items"] as const) } : {}),
-        });
-        const scope = yield* registry.resolve(
-          issued.config.authorizationHeader.replace(/^Bearer\s+/, ""),
-        );
-        expect(scope?.capabilities.has("work-items")).toBe(explicit);
-      }
-    }),
-);

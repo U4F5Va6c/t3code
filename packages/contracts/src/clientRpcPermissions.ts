@@ -4,7 +4,6 @@ import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
-  AuthWorkItemsWriteScope,
   type AuthEnvironmentScope,
 } from "./auth.ts";
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
@@ -12,11 +11,6 @@ import { WS_METHODS } from "./rpc.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
-  [WS_METHODS.workItemsCreate]: AuthWorkItemsWriteScope,
-  [WS_METHODS.workItemsRecover]: AuthWorkItemsWriteScope,
-  [WS_METHODS.workItemsUpdate]: AuthWorkItemsWriteScope,
-  [WS_METHODS.workItemsRelate]: AuthWorkItemsWriteScope,
-
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   // Endpoint checks exist to configure exports, so they need the same grant as saving them.
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,

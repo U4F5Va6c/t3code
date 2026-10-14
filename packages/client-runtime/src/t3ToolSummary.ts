@@ -112,95 +112,6 @@ export function summarizeT3ToolCalls(
   );
   let label: string;
   switch (action) {
-    case "t3_source_control_publish":
-      label = phrase("Published", "publish", `repository ${times}`);
-      break;
-    case "t3_source_control_lookup":
-      label = phrase("Looked up", "look up", `repository ${times}`);
-      break;
-    case "t3_pull_requests":
-      label = phrase("Listed", "list", `pull requests ${times}`);
-      break;
-    case "t3_pull_request_reviewer_candidates":
-      label = phrase("Listed", "list", `reviewer candidates ${times}`);
-      break;
-    case "t3_pull_request_request_reviewers":
-      label = phrase("Updated", "update", `reviewer requests ${times}`);
-      break;
-    case "t3_pull_request_submit_review":
-      label = phrase("Submitted", "submit", `review ${times}`);
-      break;
-    case "t3_pull_request_comment":
-      label = phrase("Posted", "post", `comment ${times}`);
-      break;
-    case "t3_pull_request_update_comment":
-      label = phrase("Updated", "update", `comment ${times}`);
-      break;
-    case "t3_pull_request_thread_comments":
-      label = phrase("Read", "read", `discussion ${times}`);
-      break;
-    case "t3_pull_request_reply":
-      label = phrase("Replied to", "reply to", `discussion ${times}`);
-      break;
-    case "t3_pull_request_set_thread_resolved":
-      label = phrase("Updated", "update", `discussion resolution ${times}`);
-      break;
-    case "t3_pull_request_merge":
-      label = phrase("Merged", "merge", `pull request ${times}`);
-      break;
-    case "t3_work_items_connections":
-    case "t3_work_items_projects":
-    case "t3_work_items_metadata":
-    case "t3_work_items_search":
-    case "t3_work_items_get":
-    case "t3_work_items_create":
-    case "t3_work_items_receipt":
-    case "t3_work_items_recover":
-    case "t3_work_items_update":
-    case "t3_work_items_relate":
-    case "t3_work_items_ready":
-      label = phrase("Processed", "process", `work items ${times}`);
-      break;
-    case "t3_pull_request_drafts":
-      label = phrase("Read", "read", `review draft ${times}`);
-      break;
-    case "t3_pull_request_create_draft":
-      label = phrase("Created", "create", `review draft ${times}`);
-      break;
-    case "t3_pull_request_update_draft":
-      label = phrase("Edited", "edit", `review draft ${times}`);
-      break;
-    case "t3_pull_request_delete_draft":
-      label = phrase("Discarded", "discard", `review draft ${times}`);
-      break;
-    case "t3_pull_request_activity":
-      label = phrase("Read", "read", `pull request activity ${times}`);
-      break;
-    case "t3_pull_request_detail":
-      label = phrase("Read", "read", `pull request ${times}`);
-      break;
-    case "t3_pull_request_diff":
-      label = phrase("Read", "read", `pull request diff ${times}`);
-      break;
-    case "t3_pull_request_file_contents":
-      label = phrase("Read", "read", `pull request file ${times}`);
-      break;
-    case "t3_pull_request_edit":
-      label = phrase("Edited", "edit", `pull request ${times}`);
-      break;
-    case "t3_pull_request_close":
-      label = phrase("Closed", "close", `pull request ${times}`);
-      break;
-    case "t3_pull_request_reopen":
-      label = phrase("Reopened", "reopen", `pull request ${times}`);
-      break;
-    case "t3_pull_request_create":
-      label = phrase("Created", "create", `pull request ${times}`);
-      break;
-    case "t3_git_push":
-      label = phrase("Pushed", "push", `branch ${times}`);
-      break;
-
     case "thread-send": {
       const messages = countEntities(selected.map((call) => id(call.output?.messageId)));
       const targetsKnown = threadIds.every((value) => value !== undefined);
@@ -396,12 +307,6 @@ export function summarizeT3ToolCalls(
       break;
     case "worktree-status":
       label = phrase("Checked", "check", `worktree status ${times}`);
-      break;
-    case "source-control-repositories":
-      label = phrase("Browsed", "browse", `repositories ${times}`);
-      break;
-    case "source-control-branches":
-      label = phrase("Read", "read", `repository branches ${times}`);
       break;
     case "project-list":
       label = phrase("Listed", "list", `projects ${times}`);

@@ -2199,30 +2199,3 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 });
-it.effect(
-  "keeps work-item access disabled in old files and persists explicit environment/project choices",
-  () =>
-    Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig,
-        fs = yield* FileSystem.FileSystem,
-        service = yield* ServerSettingsModule.ServerSettingsService;
-      yield* fs.writeFileString(
-        config.settingsPath,
-        JSON.stringify({
-          enableAgentBrowserAccess: true,
-          projectSettingsOverrides: { legacy: { enableAgentBrowserAccess: true } },
-        }),
-      );
-      assert.isFalse((yield* service.getSettings).enableAgentWorkItemsAccess);
-      const projectId = ProjectId.make("legacy");
-      yield* service.updateSettings({
-        enableAgentWorkItemsAccess: true,
-        projectSettingsOverrides: { [projectId]: { enableAgentWorkItemsAccess: false } },
-      });
-      const saved = yield* decodeServerSettingsJson(yield* fs.readFileString(config.settingsPath));
-      assert.isTrue(saved.enableAgentWorkItemsAccess);
-      assert.isFalse(saved.projectSettingsOverrides[projectId]?.enableAgentWorkItemsAccess);
-      yield* service.updateSettings({ enableAgentWorkItemsAccess: false });
-      assert.isFalse((yield* service.getSettings).enableAgentWorkItemsAccess);
-    }).pipe(Effect.provide(layerServerSettings().pipe(Layer.provideMerge(NodeServices.layer)))),
-);

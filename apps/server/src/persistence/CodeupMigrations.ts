@@ -21,6 +21,12 @@ export const runCodeupMigrations = Effect.fn("runCodeupMigrations")(function* ()
             WHERE migration_id = 62 AND name = 'WorkItemCreationReceipts'
           `
         : [];
+      // Work Items is retired; only migrate databases that already contain its state.
+      if (
+        legacy.length === 0 &&
+        !tables.some((table) => table.name === "work_item_creation_receipts")
+      )
+        return;
       if (
         legacy.length > 0 &&
         !tables.some((table) => table.name === "work_item_creation_receipts")

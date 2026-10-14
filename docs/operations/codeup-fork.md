@@ -2,16 +2,18 @@
 
 本 Fork：<https://github.com/U4F5Va6c/t3code>。上游：<https://github.com/pingdotgg/t3code>。
 
-Codeup 原生适配的上游基线记录在 [codeup-upstream.json](../../.github/codeup-upstream.json)。构建会核对该 tag 是官方已发布 Nightly、SHA 一致且已合入当前源码。ProjeX 原生管理与 iOS 安装包暂缓；实际可验收提交和制品以 Fork PR 的 Codeup CI 为准。
+Codeup 原生适配的上游基线记录在 [codeup-upstream.json](../../.github/codeup-upstream.json)。构建会核对该 tag 是官方已发布 Nightly、SHA 一致且已合入当前源码。实际可验收提交和制品以 Fork PR 的 Codeup CI 为准。
 
-按用户 2026-10-10 的决定，本期保留 Web/桌面原生集成，并优先确保目标机器上的 Agent 通过 `codeup` Skill 和 CLI/MCP 操作平台工作项与仓库。iOS/手机端原生集成、个人签名、真机构建和移动发布暂缓，不作为开发、发布或结项前提。当前范围与验收以 [总需求 #1](https://github.com/U4F5Va6c/t3code/issues/1) 和 [客户端验收 #8](https://github.com/U4F5Va6c/t3code/issues/8) 为准。
+按用户 2026-10-14 的决定，本 Fork 只把上游已有的 Source Control 体验适配到云效：认证、按 URL 克隆/发布、MR、diff、评审草稿/评论、检查、线程关联和 watch。沿用现有界面、服务及 MCP 入口；接口差异所需的最小适配可以保留，不以云效 API 或 Skill 提供某项能力为理由新增产品功能。ProjeX Work Items、Testhub、独立 Flow 管理、额外仓库/分支目录和新增管理 MCP 均退出产品范围。Skill/CLI 可独立使用，其工作流不作为 T3 原生适配的交付门槛。
+
+iOS/手机端原生集成、个人签名、真机构建和移动发布继续暂缓，不作为开发、发布或结项前提。当前范围与验收以 [总需求 #1](https://github.com/U4F5Va6c/t3code/issues/1) 和 [客户端验收 #8](https://github.com/U4F5Va6c/t3code/issues/8) 为准。
 
 ## 分支与上游同步
 
 - `upstream` 指向 pingdotgg/t3code，只拉取上游变更。
 - `origin` 指向个人 Fork，默认推送到这里。
 - `main` 保持上游主线，不放定制提交；`codeup-integration` 是 Fork 默认分支和长期集成分支。
-- 功能分支从 `codeup-integration` 创建。Codeup Provider、ProjeX 与发布分别保持清楚的提交边界。
+- 功能分支从 `codeup-integration` 创建。Codeup Provider 与发布分别保持清楚的提交边界。
 
 `Codeup Nightly Sync` 每 6 小时检查官方**已发布的 Nightly tag**，也支持 Actions 手动触发和 dry run。始终复用 `sync/upstream-nightly` 的一个 PR；数天未合并时，新 Nightly 更新同一 PR 并重新检查，无需逐个合并中间版本。冲突会保留原远程分支，在 PR（首次同步则 #15）报告，并上传 patch；不会强推。默认人工合并。若选择自动合并，设置 Actions variable `CODEUP_AUTO_MERGE=true`；同步 CI 成功后，工作流通过受保护的合并 API 合入确切 SHA，由集成分支的 push 事件触发发布。它仍受必需检查及评审保护约束；未满足门槛会等待下次检查。
 
@@ -37,7 +39,7 @@ git merge --no-ff <official-nightly-tag>
 
 人工同步还须更新 `.github/codeup-upstream.json` 的 tag、SHA 与发布时间。同步分支完成相关测试、类型检查和手动验收后，再通过 Fork 内部 PR 以 Merge Commit 方式合入 `codeup-integration`，不 Squash。该分支受保护：必须经 PR 且 Codeup CI 通过，管理员同样不能直接推送或强推。合入后运行 `gh api repos/U4F5Va6c/t3code/actions/workflows --paginate -q '.workflows[]|select(.state=="active")|.path'`，除显式维护的 Fork 工作流外，新增上游工作流立即禁用。PR 目标不要误选上游仓库。只有明确要贡献上游时才另开上游 PR。
 
-Fork 自有数据库迁移放在 `CodeupMigrations/`，使用独立的 `codeup_sql_migrations` 记录表；不要占用上游 `Migrations.ts` 的编号。旧版将 `WorkItemCreationReceipts` 记为上游编号 62，升级时会在事务中转移该记录并保留原表及数据，释放编号供上游使用。
+Fork 自有数据库迁移放在 `CodeupMigrations/`，使用独立的 `codeup_sql_migrations` 记录表；不要占用上游 `Migrations.ts` 的编号。已撤下的 Work Items 曾将 `WorkItemCreationReceipts` 记为上游编号 62，升级时仍须转移该旧记录并保留原表及数据，释放编号供上游使用。新安装不再建立工作项表；旧凭据中的 `work-items:write` 仅保留解码兼容，不提供对应操作或新授权。
 
 ## 独立 Source Control 的边界
 
@@ -51,7 +53,7 @@ git grep -il gitcafe -- apps packages ':!packages/source-control-gitcafe' ':!*.t
 
 共享类型影响 mobile 时只做必要的兼容处理，不新增手机原生云效入口。
 
-ProjeX 是独立工作项领域：需求/缺陷/任务不伪装成 PR。工作项可关联多个仓库、MR 和线程，状态以 ProjeX 回读为准。未来 UI 与 Agent MCP 共用服务器服务及权限检查。
+上游没有工作项管理产品；不得另建 ProjeX 页面、工作项与线程/MR 关联模型或编排系统。MR 检查适配只在现有检查、链接和合并门禁中呈现结果，不扩展为流水线运行控制或测试管理平台。
 
 Codeup git host 与 API host 分离；凭据、缓存和资源身份包含组织范围。只为验证过的 diff、评审、评论、合并和检查声明 capability。GitHub 专属 stack、merge queue、跨环境凭据路由等不会自动适用于 Codeup。
 
@@ -100,7 +102,7 @@ Fork 只运行 `codeup-ci.yml` 与 `codeup-sync.yml`。`codeup-integration` 的 
 因此 Mac 客户端连接 Linux environment 时无需在 Mac 重复配置公司 PAT。
 本机 Mac 需要能从应用进程找到凭据入口，见 [Codeup 认证](../user/source-control.md#codeup)。
 用专用测试仓库验收 MR 列表、详情、diff、评论与线程徽标，合并操作也只在测试 MR 上进行。
-MR 创建、管理、评审及平台草稿通过原生 T3 MCP 与 Web/桌面共用服务和权限检查。
+MR 创建、管理、评审及平台草稿复用 Web/桌面的现有操作；Agent 使用上游已有的关联、watch 和评审导览等工具，适配遵循同一服务与权限边界。
 目标 environment 必须具备对应平台凭据；Agent 也可使用该环境的云效 CLI/Skill。
 卸载时退出预览应用，再按需移除它的两个独立数据目录；保留原版目录。
 
@@ -146,8 +148,8 @@ Release 包内嵌 JS，不需要 Metro 常驻；`ios:dev` 是迭代调试方式�
 
 1. 从验证过的同一个集成提交构建 server、Web 和桌面，记录上游 SHA、Fork SHA、Skill 版本、工具链与构建结果；版本标签使用 `vX.Y.Z-codeup.<日期>.<CI 运行号>`。本期不构建移动制品。
 2. 桌面设置自己的 app ID、名称、数据目录、签名及更新来源。只有发布构建设置 `T3CODE_CODEUP_RELEASE=true` 生成更新配置；普通 PR 不设置。开发阶段可设置 `T3CODE_DISABLE_AUTO_UPDATE=true`。不要让 Fork 更新器覆盖官方版本或反过来覆盖 Fork。
-3. 先在独立 environment 验证认证、仓库识别、工作项关联、MR 评审与 CI，再升级日常环境。升级前停止该 environment 并备份其数据；数据库迁移后不能假设旧程序能直接读新数据库。
-4. 验证目标环境中的 Codex/Claude Code 能通过所配置的 Skill 与 CLI/MCP 完成平台操作和回读，远程断线后可以恢复；不以手机安装自签 App 为前提。
+3. 先在独立 environment 验证认证、仓库识别、MR 关联/评审与检查，再升级日常环境。升级前停止该 environment 并备份其数据；数据库迁移后不能假设旧程序能直接读新数据库。
+4. 验证目标环境中的 Agent 既有 MR 关联/watch 操作及远程断线恢复；不以业务工作项编排或手机安装自签 App 为前提。
 5. 回退使用上一套配对构建和必要的数据备份。Git 提交回退不能代替数据回退。
 
 官方商店客户端不保证理解 Fork 新增的 provider 类型；原生 Codeup 页面需使用匹配的 Fork 客户端。Skill 与 CLI/MCP 工作流可先独立使用。

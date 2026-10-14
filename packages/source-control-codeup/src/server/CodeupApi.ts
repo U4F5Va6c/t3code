@@ -1,17 +1,4 @@
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
-import * as Option from "effect/Option";
-import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
-import {
-  type SourceControlRepositoryDirectoryInput,
-  type SourceControlRepositoryDirectoryResult,
-  type SourceControlRepositoryBranchesInput,
-  type SourceControlRepositoryBranchesResult,
-  SourceControlProviderKind,
-  PositiveInt,
-  TrimmedNonEmptyString,
-  TrimmedString,
-} from "@t3tools/contracts";
+import { PositiveInt, TrimmedNonEmptyString, TrimmedString } from "@t3tools/contracts";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import { readSourceControlHostSettings } from "@t3tools/source-control-core/client/definition";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
@@ -105,18 +92,11 @@ export interface CodeupRequest {
   readonly params?: Readonly<Record<string, string | number>>;
   readonly query?: Readonly<Record<string, string | number>>;
   readonly body?: Readonly<Record<string, unknown>>;
-  readonly requireUnpaginated?: boolean;
 }
 
 export class CodeupApi extends Context.Service<
   CodeupApi,
   {
-    readonly listRepositories: (
-      input: SourceControlRepositoryDirectoryInput,
-    ) => Effect.Effect<SourceControlRepositoryDirectoryResult, CodeupApiError>;
-    readonly listBranches: (
-      input: SourceControlRepositoryBranchesInput,
-    ) => Effect.Effect<SourceControlRepositoryBranchesResult, CodeupApiError>;
     readonly request: (input: CodeupRequest) => Effect.Effect<unknown, CodeupApiError>;
     readonly getRepository: (
       repository: string,
@@ -129,8 +109,6 @@ export class CodeupApi extends Context.Service<
 >()("@t3tools/source-control-codeup/server/CodeupApi") {}
 
 const make = Effect.gen(function* () {
-  const fs = yield* Effect.serviceOption(FileSystem.FileSystem);
-  const pathService = yield* Effect.serviceOption(Path.Path);
   const client = HttpClient.withScope(yield* HttpClient.HttpClient);
   const host = yield* SourceControlHost.SourceControlHost;
   const environment = yield* HostProcess.Environment;
@@ -149,8 +127,7 @@ const make = Effect.gen(function* () {
 
   const request = Effect.fn("CodeupApi.request")(function* (input: CodeupRequest) {
     const spec = operations[input.operation];
-    const pinned = yield* PinnedCodeupTokens;
-    const saved = pinned ?? (yield* tokens);
+    const saved = yield* tokens;
     const organizationId =
       input.organizationId ??
       Object.keys(saved)[0] ??
@@ -192,22 +169,14 @@ const make = Effect.gen(function* () {
           .toLowerCase();
       const args = [
         spec.cli,
-        ...Object.entries({
-          ...params,
-          ...input.query,
-          ...(input.operation === "ProjexUpdate" ? { bizBody: input.body } : input.body),
-        }).flatMap(([key, value]) =>
-          input.operation === "ProjexCreate" && Array.isArray(value)
-            ? [`--${flag(key)}`, ...value.map(String)]
-            : [
-                `--${flag(key)}`,
-                typeof value === "object"
-                  ? JSON.stringify(value)
-                  : key === "repositoryId"
-                    ? encodeURIComponent(String(value))
-                    : String(value),
-              ],
-        ),
+        ...Object.entries({ ...params, ...input.query, ...input.body }).flatMap(([key, value]) => [
+          `--${flag(key)}`,
+          typeof value === "object"
+            ? JSON.stringify(value)
+            : key === "repositoryId"
+              ? encodeURIComponent(String(value))
+              : String(value),
+        ]),
       ];
       const run = (command: string, prefix: ReadonlyArray<string>) =>
         host.process.run({
@@ -221,69 +190,6 @@ const make = Effect.gen(function* () {
           allowNonZeroExit: true,
           env: { ALIBABA_CLOUD_YUNXIAO_API_BASE_URL: CODEUP_API_HOST },
         });
-      if (input.operation === "ProjexItemWorkflow") {
-        if (!organizationId || !input.params?.id) return yield* httpFailure(null);
-        const node = yield* Effect.gen(function* () {
-          if (!(yield* HostProcess.IsExecutable)) return yield* HostProcess.ExecutablePath;
-          if (Option.isNone(fs) || Option.isNone(pathService))
-            return yield* new CodeupApiError({ reason: "not-configured", status: null });
-          return yield* resolveNodeExecutable("ProjeX workflow", environment).pipe(
-            Effect.provideService(FileSystem.FileSystem, fs.value),
-            Effect.provideService(Path.Path, pathService.value),
-          );
-        }).pipe(
-          Effect.mapError(
-            (cause) =>
-              new CodeupApiError({
-                reason: "not-configured",
-                status: null,
-                cause: Redacted.make(cause),
-              }),
-          ),
-        );
-        const result = yield* host.process
-          .run({
-            operation: "CodeupApi.projexWorkflow",
-            command: "aliyun-devops",
-            args: [
-              "--exec",
-              node,
-              "--input-type=module",
-              "-e",
-              PROJEX_WORKFLOW_SCRIPT,
-              organizationId,
-              String(input.params.id),
-            ],
-            cwd: workingDirectory,
-            spawnCwd: workingDirectory,
-            timeoutMs: 30_000,
-            maxOutputBytes: 8 * 1024 * 1024,
-            allowNonZeroExit: true,
-            env: { ALIBABA_CLOUD_YUNXIAO_API_BASE_URL: CODEUP_API_HOST },
-          })
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new CodeupApiError({
-                  reason: "not-configured",
-                  status: null,
-                  cause: Redacted.make(cause),
-                }),
-            ),
-          );
-        if (result.exitCode !== 0 || result.stdoutTruncated || result.stdoutInvalidUtf8)
-          return yield* httpFailure(null);
-        return yield* decodeJson(result.stdout).pipe(
-          Effect.mapError(
-            (cause) =>
-              new CodeupApiError({
-                reason: "invalid-response",
-                status: null,
-                cause: Redacted.make(cause),
-              }),
-          ),
-        );
-      }
       const result = yield* run("aliyun-devops", []).pipe(
         Effect.catch((cause) =>
           cause._tag === "VcsProcessSpawnError" &&
@@ -348,13 +254,6 @@ const make = Effect.gen(function* () {
             }),
         ),
       );
-    if (
-      input.requireUnpaginated &&
-      Object.keys(response.headers).some((key) =>
-        /^x-(?:next-page|page|per-page|total|total-pages)$/i.test(key),
-      )
-    )
-      return yield* new CodeupApiError({ reason: "invalid-response", status: response.status });
     if (response.status < 200 || response.status >= 300) {
       return yield* httpFailure(response.status);
     }
@@ -418,109 +317,9 @@ const make = Effect.gen(function* () {
     }
     return repository;
   });
-  const validateDirectory = (input: SourceControlRepositoryDirectoryInput) =>
-    input.apiHost !== CODEUP_API_HOST
-      ? Effect.fail(new CodeupApiError({ reason: "unsupported-host", status: null }))
-      : /^[a-zA-Z0-9_-]+$/u.test(input.organizationId) &&
-          Number.isSafeInteger(input.page) &&
-          input.page >= 1 &&
-          Number.isSafeInteger(input.perPage) &&
-          input.perPage >= 1 &&
-          input.perPage <= 100
-        ? Effect.void
-        : Effect.fail(new CodeupApiError({ reason: "invalid-repository", status: null }));
-  const directoryRepository = (organizationId: string, repo: typeof Repository.Type) => ({
-    provider: SourceControlProviderKind.make("codeup"),
-    apiHost: CODEUP_API_HOST,
-    organizationId,
-    repositoryId: String(repo.id),
-    nameWithOwner: repo.pathWithNamespace,
-    webUrl: repo.webUrl,
-    url: repo.httpUrlToRepo,
-    sshUrl: repo.sshUrlToRepo,
-    defaultBranch: repo.defaultBranch || null,
-  });
-  const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S) =>
-    Effect.flatMap((value: unknown) =>
-      Schema.decodeUnknownEffect(schema)(value).pipe(
-        Effect.mapError(
-          (cause) =>
-            new CodeupApiError({
-              reason: "invalid-response",
-              status: null,
-              cause: Redacted.make(cause),
-            }),
-        ),
-      ),
-    );
   return CodeupApi.of({
     request,
     getRepository,
-    listRepositories: Effect.fn("CodeupApi.listRepositories")(function* (input) {
-      yield* validateDirectory(input);
-      const repositories = yield* request({
-        operation: "ListRepositories",
-        organizationId: input.organizationId,
-        query: {
-          page: input.page,
-          perPage: input.perPage,
-          ...(input.search ? { search: input.search } : {}),
-        },
-      }).pipe(decode(Schema.Array(Repository)));
-      for (const repo of repositories) {
-        const parsed = parseCodeupRepository(repo.pathWithNamespace);
-        if (
-          parsed?.organizationId !== input.organizationId ||
-          !repo.webUrl.startsWith(`https://${CODEUP_HOST}/`) ||
-          [repo.webUrl, repo.httpUrlToRepo, repo.sshUrlToRepo].some(
-            (url) => parseCodeupRepository(url)?.repository !== repo.pathWithNamespace,
-          )
-        )
-          return yield* new CodeupApiError({ reason: "invalid-response", status: null });
-      }
-      // shortcut: request discards pagination headers; a full page may lead to one final empty page until headers are exposed.
-      return {
-        repositories: repositories.map((repo) => directoryRepository(input.organizationId, repo)),
-        nextPage: repositories.length === input.perPage ? input.page + 1 : null,
-      };
-    }),
-    listBranches: Effect.fn("CodeupApi.listBranches")(function* (input) {
-      yield* validateDirectory(input);
-      if (parseCodeupRepository(input.repository)?.organizationId !== input.organizationId)
-        return yield* new CodeupApiError({ reason: "invalid-repository", status: null });
-      const repo = yield* getRepository(input.repository);
-      if (String(repo.id) !== input.repositoryId)
-        return yield* new CodeupApiError({ reason: "invalid-repository", status: null });
-      const branches = yield* request({
-        operation: "ListBranches",
-        organizationId: input.organizationId,
-        params: { repositoryId: repo.id },
-        query: {
-          page: input.page,
-          perPage: input.perPage,
-          ...(input.search ? { search: input.search } : {}),
-        },
-      }).pipe(
-        decode(
-          Schema.Array(
-            Schema.Struct({
-              name: TrimmedNonEmptyString,
-              commit: Schema.Struct({ id: TrimmedNonEmptyString }),
-              protected: Schema.Boolean,
-            }),
-          ),
-        ),
-      );
-      return {
-        repository: directoryRepository(input.organizationId, repo),
-        branches: branches.map((branch) => ({
-          name: branch.name,
-          sha: branch.commit.id,
-          protected: branch.protected,
-        })),
-        nextPage: branches.length === input.perPage ? input.page + 1 : null,
-      };
-    }),
     probe: tokens.pipe(
       Effect.flatMap((saved) =>
         Effect.forEach(
@@ -566,33 +365,3 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(CodeupApi, make);
-
-const PROJEX_WORKFLOW_SCRIPT = `
-const [org, id] = process.argv.slice(1);
-const token = process.env.ALIBABA_CLOUD_YUNXIAO_ACCESS_TOKEN;
-if (!token || !org || !id) process.exit(2);
-try {
- const response = await fetch("https://openapi-rdc.aliyuncs.com/oapi/v1/projex/organizations/" + encodeURIComponent(org) + "/workitems/" + encodeURIComponent(id) + "/workflow", {method:"GET",redirect:"error",signal:AbortSignal.timeout(15000),headers:{"x-yunxiao-token":token,accept:"application/json"}});
- if (!response.ok || !response.body) process.exit(3);
- let size=0;const chunks=[];
- for await (const chunk of response.body) { size+=chunk.length;if(size>8388608)process.exit(4);chunks.push(chunk); }
- const text=new TextDecoder("utf-8",{fatal:true}).decode(Buffer.concat(chunks));JSON.parse(text);if(text.includes(token))process.exit(6);process.stdout.write(text);
-} catch { process.exit(5); }
-`;
-
-const PinnedCodeupTokens = Context.Reference<Readonly<Record<string, string>> | null>(
-  "CodeupApi/PinnedTokens",
-  { defaultValue: () => null },
-);
-
-/** Snapshot configured credentials for a multi-step ProjeX operation; never return token values. */
-export const withOrganizationCredential = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.gen(function* () {
-    const host = yield* SourceControlHost.SourceControlHost;
-    const settings = yield* host.settings.get;
-    const tokens = readSourceControlHostSettings(
-      CodeupClient.settings,
-      settings.sourceControlHosts.codeup,
-    ).organizationTokens;
-    return yield* effect.pipe(Effect.provideService(PinnedCodeupTokens, tokens));
-  });

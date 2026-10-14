@@ -14,13 +14,14 @@ import {
 } from "./auth.ts";
 
 describe("authorization grants", () => {
-  it("decodes legacy review credentials without offering them in new grants", () => {
-    expect(Schema.decodeUnknownSync(AuthEnvironmentScopes)(["review:write"])).toEqual([
-      "review:write",
-    ]);
-    expect(() => Schema.decodeUnknownSync(AuthGrantScopes)(["review:write"])).toThrow();
-    expect(AuthStandardClientScopes).not.toContain("review:write");
-  });
+  it.each(["review:write", "work-items:write"])(
+    "decodes retired %s credentials without offering them in new grants",
+    (scope) => {
+      expect(Schema.decodeUnknownSync(AuthEnvironmentScopes)([scope])).toEqual([scope]);
+      expect(() => Schema.decodeUnknownSync(AuthGrantScopes)([scope])).toThrow();
+      expect(AuthStandardClientScopes).not.toContain(scope);
+    },
+  );
 
   // Frozen vocabulary from the client before granular scopes shipped. Do not
   // derive it from the current enum: that would hide compatibility regressions.

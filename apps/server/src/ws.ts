@@ -1,4 +1,3 @@
-import * as WorkItemsService from "./workItems/WorkItemsService.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -7,14 +6,12 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Base64 from "effect/encoding/Base64";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
@@ -206,7 +203,6 @@ import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts
 import * as ProjectService from "./project/ProjectService.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import { projectMutationOperation } from "./project/ProjectMutation.ts";
-import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
@@ -548,72 +544,6 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
 const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
-
-// Keep handler service inference bounded while serving the unchanged full protocol group.
-const ServerCoreWsRpcGroup = ServerWsRpcGroup.omit(
-  WS_METHODS.workItemsConnections,
-  WS_METHODS.workItemsProjects,
-  WS_METHODS.workItemsMetadata,
-  WS_METHODS.workItemsSearch,
-  WS_METHODS.workItemsGet,
-  WS_METHODS.workItemsCreate,
-  WS_METHODS.workItemsReceipt,
-  WS_METHODS.workItemsRecover,
-  WS_METHODS.workItemsUpdate,
-  WS_METHODS.workItemsRelate,
-  WS_METHODS.workItemsReady,
-);
-
-export const layerWorkItemsRpc = Layer.mergeAll(
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsConnections,
-    Effect.map(
-      WorkItemsService.WorkItemsService,
-      (service) => (input) => service.connections(input),
-    ),
-  ),
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsProjects,
-    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.projects(input)),
-  ),
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsMetadata,
-    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.metadata(input)),
-  ),
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsSearch,
-    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.search(input)),
-  ),
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsGet,
-    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.get(input)),
-  ),
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsCreate,
-    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.create(input)),
-  ),
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsReceipt,
-    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.receipt(input)),
-  ),
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsRecover,
-    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.recover(input)),
-  ),
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsUpdate,
-    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.update(input)),
-  ),
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsRelate,
-    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.relate(input)),
-  ),
-  ServerWsRpcGroup.toLayerHandler(
-    WS_METHODS.workItemsReady,
-    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.ready(input)),
-  ),
-);
-
 // When a resuming client's cursor is more than this many events behind the
 // current head, skip the per-event catch-up replay and send a fresh shell
 // snapshot instead. Replaying each intervening event costs a shell refetch;
@@ -1269,7 +1199,7 @@ const layerWsRpc = (
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
-  ServerCoreWsRpcGroup.toLayer(
+  ServerWsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
@@ -1325,7 +1255,6 @@ const layerWsRpc = (
             );
       const usage = yield* UsageService.UsageService;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
-      const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
       const repositoryIdentityResolver =
@@ -1892,7 +1821,7 @@ const layerWsRpc = (
         return result;
       });
 
-      const handlers = ServerCoreWsRpcGroup.of({
+      const handlers = ServerWsRpcGroup.of({
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -2643,10 +2572,6 @@ const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.labelCandidates(input)),
         [WS_METHODS.pullRequestsSetLabels]: (input) =>
           withPullRequestViewer(input, pullRequests.setLabels(input)),
-        [WS_METHODS.sourceControlListRepositories]: (input) =>
-          sourceControlRepositories.listRepositories(input),
-        [WS_METHODS.sourceControlListBranches]: (input) =>
-          sourceControlRepositories.listBranches(input),
         [WS_METHODS.sourceControlLookupRepository]: (input) =>
           sourceControlRepositories.lookupRepository(input),
         [WS_METHODS.sourceControlCloneRepository]: (input) =>
@@ -3273,15 +3198,12 @@ export const layer = Layer.unwrap(
           return httpEffect;
         }).pipe(
           Effect.provide(
-            Layer.merge(
-              layerWorkItemsRpc,
-              layerWsRpc(
-                session,
-                clientOrigin,
-                clientAnalyticsProps,
-                previewAutomationBroker,
-                serverBrowser,
-              ),
+            layerWsRpc(
+              session,
+              clientOrigin,
+              clientAnalyticsProps,
+              previewAutomationBroker,
+              serverBrowser,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees

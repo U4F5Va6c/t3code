@@ -2,10 +2,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
 import type {
-  SourceControlRepositoryDirectoryInput,
-  SourceControlRepositoryDirectoryResult,
-  SourceControlRepositoryBranchesInput,
-  SourceControlRepositoryBranchesResult,
   RepositoryIdentity,
   ChangeRequest,
   ChangeRequestState,
@@ -116,12 +112,6 @@ export function repositoryPathFromRemoteUrl(url: string | null): string | null {
 export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
-    readonly listRepositories?: (
-      input: SourceControlRepositoryDirectoryInput,
-    ) => Effect.Effect<SourceControlRepositoryDirectoryResult, SourceControlProviderError>;
-    readonly listBranches?: (
-      input: SourceControlRepositoryBranchesInput,
-    ) => Effect.Effect<SourceControlRepositoryBranchesResult, SourceControlProviderError>;
     readonly kind: SourceControlProviderKind;
     /**
      * How to look up a branch's change requests: which head selectors to ask about, and how many

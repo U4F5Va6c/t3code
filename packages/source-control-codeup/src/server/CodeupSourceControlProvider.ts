@@ -104,10 +104,6 @@ export const make = Effect.gen(function* () {
   });
   return SourceControlProvider.SourceControlProvider.of({
     kind: definition.kind,
-    listRepositories: (input) =>
-      api.listRepositories(input).pipe(Effect.mapError(mapError("", "listRepositories"))),
-    listBranches: (input) =>
-      api.listBranches(input).pipe(Effect.mapError(mapError("", "listBranches"))),
     headBranchProbe: ({ headSelectors, state }) => ({
       headSelectors: headSelectors.filter((s) => !s.includes(":")),
       limit: state === "open" ? 1 : 20,

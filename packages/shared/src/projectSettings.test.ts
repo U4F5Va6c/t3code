@@ -501,28 +501,3 @@ it("inherits branch naming defaults and applies project overrides independently"
   });
   expect(resolveProjectSettings(cleared, projectId).settings.branchNamingMode).toBe("static");
 });
-
-it("resolves and clears explicit work-item access without widening other projects", () => {
-  const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-    projectSettingsOverrides: { [projectId]: { enableAgentWorkItemsAccess: true } },
-  });
-  expect(resolveProjectSettings(settings, projectId).settings.enableAgentWorkItemsAccess).toBe(
-    true,
-  );
-  expect(resolveProjectSettings(settings, otherProjectId).settings.enableAgentWorkItemsAccess).toBe(
-    false,
-  );
-  const denied = applyServerSettingsPatch(
-    { ...settings, enableAgentWorkItemsAccess: true },
-    { projectSettingsOverrides: { [projectId]: { enableAgentWorkItemsAccess: false } } },
-  );
-  expect(resolveProjectSettings(denied, projectId).settings.enableAgentWorkItemsAccess).toBe(false);
-  const cleared = clearProjectSettingsOverrides(settings, projectId, [
-    "enableAgentWorkItemsAccess",
-  ]);
-  expect(cleared).toBeNull();
-  const reset = applyServerSettingsPatch(settings, {
-    projectSettingsOverrides: { [projectId]: cleared },
-  });
-  expect(resolveProjectSettings(reset, projectId).settings.enableAgentWorkItemsAccess).toBe(false);
-});
