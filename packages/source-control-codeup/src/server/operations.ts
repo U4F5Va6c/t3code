@@ -81,6 +81,11 @@ export const operations = {
     path: "/codeup/organizations/{organizationId}/repositories/{repositoryId}/changeRequests/{localId}",
     cli: "codeup-update-change-request",
   },
+  DeleteChangeRequestComment: {
+    method: "DELETE",
+    path: "/codeup/organizations/{organizationId}/repositories/{repositoryId}/changeRequests/{localId}/comments/{commentBizId}",
+    cli: "codeup-delete-change-request-comment",
+  },
   UpdateChangeRequestComment: {
     method: "PUT",
     path: "/codeup/organizations/{organizationId}/repositories/{repositoryId}/changeRequests/{localId}/comments/{commentBizId}",

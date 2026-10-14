@@ -42,6 +42,7 @@ const reads = new Set<string>([
   WS_METHODS.pullRequestsDiffFileContents,
   WS_METHODS.pullRequestsFilesViewed,
   WS_METHODS.pullRequestsReviewerCandidates,
+  WS_METHODS.pullRequestsListReviewDrafts,
   WS_METHODS.pullRequestsLabelCandidates,
 ]);
 // Review guides are not routed: each server keeps its own, so another server answering would
@@ -53,6 +54,9 @@ const writes = new Set<string>([
   WS_METHODS.pullRequestsComment,
   WS_METHODS.pullRequestsUpdateComment,
   WS_METHODS.pullRequestsSubmitReview,
+  WS_METHODS.pullRequestsCreateReviewDraft,
+  WS_METHODS.pullRequestsUpdateReviewDraft,
+  WS_METHODS.pullRequestsDeleteReviewDraft,
   WS_METHODS.pullRequestsReplyToThread,
   WS_METHODS.pullRequestsSetReaction,
   WS_METHODS.pullRequestsSetThreadResolution,

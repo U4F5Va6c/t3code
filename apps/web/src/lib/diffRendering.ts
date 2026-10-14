@@ -215,6 +215,14 @@ export function resolveFileDiffPreviousPath(fileDiff: FileDiffMetadata): string 
   return fileDiff.prevName ?? fileDiff.name ?? "";
 }
 
+/** Review anchors use the original patch names even when rendering replaces file metadata. */
+export function resolveFileDiffReviewPaths(file: FileDiffMetadata, sourceFile?: FileDiffMetadata) {
+  const original = sourceFile ?? file;
+  const path = resolveFileDiffPath(original);
+  const previousPath = resolveFileDiffPreviousPath(original);
+  return { path, oldPath: previousPath === path ? null : previousPath };
+}
+
 /**
  * Stable across re-renders of the same file, distinct for every block in a
  * patch. A type change (regular file to symlink) arrives as a deletion and an

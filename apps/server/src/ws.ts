@@ -2536,6 +2536,14 @@ const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.comment(input)),
         [WS_METHODS.pullRequestsUpdateComment]: (input) =>
           withPullRequestViewer(input, pullRequests.updateComment(input)),
+        [WS_METHODS.pullRequestsListReviewDrafts]: (input) =>
+          withPullRequestViewer(input, pullRequests.listReviewDrafts(input)),
+        [WS_METHODS.pullRequestsCreateReviewDraft]: (input) =>
+          withPullRequestViewer(input, pullRequests.createReviewDraft(input)),
+        [WS_METHODS.pullRequestsUpdateReviewDraft]: (input) =>
+          withPullRequestViewer(input, pullRequests.updateReviewDraft(input)),
+        [WS_METHODS.pullRequestsDeleteReviewDraft]: (input) =>
+          withPullRequestViewer(input, pullRequests.deleteReviewDraft(input)),
         [WS_METHODS.pullRequestsSubmitReview]: (input) =>
           withPullRequestViewer(input, pullRequests.submitReview(input)),
         [WS_METHODS.pullRequestsReplyToThread]: (input) =>

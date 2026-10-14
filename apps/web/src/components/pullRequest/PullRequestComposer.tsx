@@ -1,3 +1,4 @@
+import { usePullRequestReviewDrafts } from "./usePullRequestReviewDrafts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 /**
  * The single floating control over a pull request. Commenting on the change and submitting the
@@ -18,11 +19,7 @@ import { Popover, PopoverClose, PopoverPopup, PopoverTitle, PopoverTrigger } fro
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { PullRequestCommentForm } from "./PullRequestCommentForm";
 import { PullRequestReviewForm } from "./PullRequestReviewForm";
-import {
-  pullRequestReviewKey,
-  usePendingReviewComments,
-  usePullRequestReviewStore,
-} from "./pullRequestReviewStore";
+import { pullRequestReviewKey, usePullRequestReviewStore } from "./pullRequestReviewStore";
 
 export function PullRequestComposer({
   environmentId,
@@ -55,8 +52,15 @@ export function PullRequestComposer({
   const [requestedMode, setRequestedMode] = useState<"comment" | "review">("comment");
   const commentRef = useRef<HTMLTextAreaElement>(null);
   const reviewRef = useRef<HTMLTextAreaElement>(null);
-  const pendingComments = usePendingReviewComments(reference);
-  const clearComments = usePullRequestReviewStore((store) => store.clear);
+  const persistedDrafts = detail.capabilities.review.persistedDrafts === true;
+  const reviewDrafts = usePullRequestReviewDrafts(
+    environmentId,
+    reference,
+    persistedDrafts,
+    detail.viewer,
+    detail.headSha,
+  );
+  const pendingComments = reviewDrafts.comments;
   // A summary typed but not sent is review work too, and it outlives the popover. Selected as a
   // boolean rather than the text, so typing one does not re-render the composer per keystroke.
   const reviewKey = pullRequestReviewKey(reference);
@@ -149,8 +153,12 @@ export function PullRequestComposer({
                 variant="ghost"
                 aria-label="Discard pending line comments"
                 title="Discard pending line comments"
-                disabled={reviewPending}
-                onClick={() => clearComments(reviewKey)}
+                disabled={reviewPending || (persistedDrafts && !reviewDrafts.canWrite)}
+                onClick={async () => {
+                  setReviewPending(true);
+                  await reviewDrafts.discard();
+                  setReviewPending(false);
+                }}
               >
                 <Trash2Icon className="size-3.5" />
               </Button>
@@ -169,6 +177,8 @@ export function PullRequestComposer({
           <div hidden={mode !== "review"}>
             <PullRequestReviewForm
               headSha={detail.headSha}
+              persistedDrafts={persistedDrafts}
+              viewer={detail.viewer}
               environmentId={environmentId}
               reference={reference}
               verdicts={verdicts}

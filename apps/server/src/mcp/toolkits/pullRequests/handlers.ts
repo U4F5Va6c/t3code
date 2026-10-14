@@ -580,6 +580,46 @@ const make = Effect.gen(function* () {
         return yield* service.list({ ...input, projectIds: [input.projectId] });
       }),
     ),
+    t3_pull_request_drafts: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsListReviewDrafts, false);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          service.listReviewDrafts({ ...input, ...ref }),
+        );
+      }),
+    ),
+    t3_pull_request_create_draft: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsCreateReviewDraft, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          service.createReviewDraft({ ...input, ...ref }),
+        );
+      }),
+    ),
+    t3_pull_request_update_draft: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsUpdateReviewDraft, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          service.updateReviewDraft({ ...input, ...ref }),
+        );
+      }),
+    ),
+    t3_pull_request_delete_draft: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsDeleteReviewDraft, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          service.deleteReviewDraft({ ...input, ...ref }),
+        );
+      }),
+    ),
     t3_pull_request_activity: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
         const ref = yield* managedReference(input, WS_METHODS.pullRequestsActivity);

@@ -1,4 +1,11 @@
 import {
+  PullRequestDraftList,
+  PullRequestDraftCreateInput,
+  PullRequestDraftUpdateInput,
+  PullRequestDraftRef,
+  PullRequestPersistedDraft,
+} from "./pullRequest.ts";
+import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -553,6 +560,10 @@ export const WS_METHODS = {
   pullRequestsUpdate: "pullRequests.update",
   pullRequestsComment: "pullRequests.comment",
   pullRequestsUpdateComment: "pullRequests.updateComment",
+  pullRequestsListReviewDrafts: "pullRequests.listReviewDrafts",
+  pullRequestsCreateReviewDraft: "pullRequests.createReviewDraft",
+  pullRequestsUpdateReviewDraft: "pullRequests.updateReviewDraft",
+  pullRequestsDeleteReviewDraft: "pullRequests.deleteReviewDraft",
   pullRequestsSubmitReview: "pullRequests.submitReview",
   pullRequestsReplyToThread: "pullRequests.replyToThread",
   pullRequestsSetThreadResolution: "pullRequests.setThreadResolution",
@@ -1093,6 +1104,26 @@ const WsPullRequestsUpdateCommentRpc = Rpc.make(WS_METHODS.pullRequestsUpdateCom
   error: PullRequestRpcError,
 });
 
+const WsPullRequestsListReviewDraftsRpc = Rpc.make(WS_METHODS.pullRequestsListReviewDrafts, {
+  payload: PullRequestRef,
+  success: PullRequestDraftList,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsCreateReviewDraftRpc = Rpc.make(WS_METHODS.pullRequestsCreateReviewDraft, {
+  payload: PullRequestDraftCreateInput,
+  success: PullRequestPersistedDraft,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsUpdateReviewDraftRpc = Rpc.make(WS_METHODS.pullRequestsUpdateReviewDraft, {
+  payload: PullRequestDraftUpdateInput,
+  success: PullRequestPersistedDraft,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsDeleteReviewDraftRpc = Rpc.make(WS_METHODS.pullRequestsDeleteReviewDraft, {
+  payload: PullRequestDraftRef,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
 const WsPullRequestsSubmitReviewRpc = Rpc.make(WS_METHODS.pullRequestsSubmitReview, {
   payload: PullRequestSubmitReviewInput,
   success: Schema.Void,
@@ -1979,6 +2010,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsUpdateRpc,
   WsPullRequestsCommentRpc,
   WsPullRequestsUpdateCommentRpc,
+  WsPullRequestsListReviewDraftsRpc,
+  WsPullRequestsCreateReviewDraftRpc,
+  WsPullRequestsUpdateReviewDraftRpc,
+  WsPullRequestsDeleteReviewDraftRpc,
   WsPullRequestsSubmitReviewRpc,
   WsPullRequestsReplyToThreadRpc,
   WsPullRequestsSetThreadResolutionRpc,

@@ -1,3 +1,11 @@
+import type {
+  PullRequestReviewRevision,
+  PullRequestDraftList,
+  PullRequestDraftCreateInput,
+  PullRequestDraftUpdateInput,
+  PullRequestDraftRef,
+  PullRequestPersistedDraft,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type {
@@ -276,6 +284,7 @@ export interface ProviderChangeRequestActivity {
 }
 
 export interface ProviderDiffSlice {
+  readonly revision?: PullRequestReviewRevision;
   readonly patch: string;
   /** Something in this slice could not be shown, as opposed to there being more slices. */
   readonly truncated: boolean;
@@ -635,11 +644,26 @@ export interface PullRequestProviderApi {
    * `capabilities.review.verdicts`, and with line comments only where it declared
    * `inlineComment`.
    */
+  readonly listReviewDrafts?: (
+    input: ProviderRepositoryRef & { readonly number: number },
+  ) => Effect.Effect<PullRequestDraftList, PullRequestProviderError>;
+  readonly createReviewDraft?: (
+    input: ProviderRepositoryRef & Omit<PullRequestDraftCreateInput, "projectId">,
+  ) => Effect.Effect<PullRequestPersistedDraft, PullRequestProviderError>;
+  readonly updateReviewDraft?: (
+    input: ProviderRepositoryRef & Omit<PullRequestDraftUpdateInput, "projectId">,
+  ) => Effect.Effect<PullRequestPersistedDraft, PullRequestProviderError>;
+  readonly deleteReviewDraft?: (
+    input: ProviderRepositoryRef & Omit<PullRequestDraftRef, "projectId">,
+  ) => Effect.Effect<void, PullRequestProviderError>;
+
   readonly submitReview: (
     input: ProviderRepositoryRef & {
       readonly number: number;
       readonly verdict: PullRequestReviewVerdict;
       readonly expectedHeadSha?: string;
+      readonly draftCommentIds?: ReadonlyArray<string>;
+      readonly expectedRevision?: PullRequestReviewRevision;
       readonly body: string;
       readonly comments: ReadonlyArray<PullRequestReviewCommentDraft>;
     },

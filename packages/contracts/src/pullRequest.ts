@@ -365,6 +365,7 @@ export type PullRequestCommit = typeof PullRequestCommit.Type;
  * to write against at all.
  */
 export const PullRequestReviewCapabilities = Schema.Struct({
+  persistedDrafts: Schema.optional(Schema.Boolean),
   /** A new comment can be anchored to a line of the diff. */
   inlineComment: Schema.Boolean,
   /** An existing thread can be replied to. */
@@ -1035,7 +1036,16 @@ export const PullRequestOmittedFileStat = Schema.Struct({
 });
 export type PullRequestOmittedFileStat = typeof PullRequestOmittedFileStat.Type;
 
+export const PullRequestReviewRevision = Schema.Struct({
+  baseSha: TrimmedNonEmptyString,
+  headSha: TrimmedNonEmptyString,
+  fromPatchSetId: TrimmedNonEmptyString,
+  toPatchSetId: TrimmedNonEmptyString,
+});
+export type PullRequestReviewRevision = typeof PullRequestReviewRevision.Type;
+
 export const PullRequestDiffResult = Schema.Struct({
+  revision: Schema.optional(PullRequestReviewRevision),
   patch: Schema.String,
   /**
    * Something inside this slice could not be shown — a binary file, or a hunk the host declined
@@ -1233,12 +1243,55 @@ export const PullRequestReviewCommentDraft = Schema.Struct({
 });
 export type PullRequestReviewCommentDraft = typeof PullRequestReviewCommentDraft.Type;
 
+/** A private platform draft; its original anchor never moves to a newer comparison. */
+export const PullRequestPersistedDraft = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  body: Schema.String,
+  author: Schema.NullOr(PullRequestActor),
+  path: Schema.NullOr(TrimmedNonEmptyString),
+  oldPath: Schema.optional(TrimmedNonEmptyString),
+  side: Schema.NullOr(PullRequestDiffSide),
+  line: Schema.NullOr(PositiveInt),
+  patchSetId: Schema.NullOr(TrimmedNonEmptyString),
+  revision: Schema.NullOr(PullRequestReviewRevision),
+  stale: Schema.Boolean,
+  canEdit: Schema.Boolean,
+  canDelete: Schema.Boolean,
+});
+export type PullRequestPersistedDraft = typeof PullRequestPersistedDraft.Type;
+export const PullRequestDraftList = Schema.Struct({
+  viewer: TrimmedNonEmptyString,
+  drafts: Schema.Array(PullRequestPersistedDraft),
+  revision: PullRequestReviewRevision,
+});
+export type PullRequestDraftList = typeof PullRequestDraftList.Type;
+export const PullRequestDraftCreateInput = Schema.Struct({
+  ...PullRequestRef.fields,
+  ...PullRequestReviewCommentDraft.fields,
+  expectedRevision: PullRequestReviewRevision,
+});
+export type PullRequestDraftCreateInput = typeof PullRequestDraftCreateInput.Type;
+export const PullRequestDraftRef = Schema.Struct({
+  ...PullRequestRef.fields,
+  draftCommentId: TrimmedNonEmptyString,
+});
+export type PullRequestDraftRef = typeof PullRequestDraftRef.Type;
+export const PullRequestDraftUpdateInput = Schema.Struct({
+  ...PullRequestDraftRef.fields,
+  body: CommentBody,
+});
+export type PullRequestDraftUpdateInput = typeof PullRequestDraftUpdateInput.Type;
+
 /**
  * A whole review, sent in one go. The line comments travel with the verdict rather than being
  * posted as they are written, so a half-finished review is never visible to anyone else — and
  * so hosts with no notion of a pending review behave the same as the ones that have it.
  */
 export const PullRequestSubmitReviewInput = Schema.Struct({
+  draftCommentIds: Schema.optional(
+    Schema.Array(TrimmedNonEmptyString).check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  ),
+  expectedRevision: Schema.optional(PullRequestReviewRevision),
   ...PullRequestRef.fields,
   /** The revision displayed while composing the review; hosts may require it for verdicts. */
   expectedHeadSha: Schema.optional(TrimmedNonEmptyString),

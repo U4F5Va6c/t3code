@@ -1,3 +1,10 @@
+import {
+  PullRequestDraftList,
+  PullRequestDraftCreateInput,
+  PullRequestDraftUpdateInput,
+  PullRequestDraftRef,
+  PullRequestPersistedDraft,
+} from "@t3tools/contracts";
 import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
 import {
   ProjectId,
@@ -473,6 +480,49 @@ export const ManagedGitInput = Schema.Struct({
 });
 
 export const PullRequestsToolkit = Toolkit.make(
+  Tool.make("t3_pull_request_drafts", {
+    ...managementShared,
+    description:
+      "Read only your private platform review drafts with their original revision and stale status.",
+    parameters: Schema.Struct({ ...ManagedPullRequestTarget.fields }),
+    success: PullRequestDraftList,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("t3_pull_request_create_draft", {
+    ...managementShared,
+    description:
+      "Create a private inline draft using the complete revision returned by the reviewed diff. Refresh after uncertain failure; never blindly retry.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      path: PullRequestDraftCreateInput.fields.path,
+      oldPath: PullRequestDraftCreateInput.fields.oldPath,
+      position: PullRequestDraftCreateInput.fields.position,
+      body: PullRequestDraftCreateInput.fields.body,
+      expectedRevision: PullRequestDraftCreateInput.fields.expectedRevision,
+    }),
+    success: PullRequestPersistedDraft,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_pull_request_update_draft", {
+    ...managementShared,
+    description:
+      "Edit your unpublished draft body without moving its original anchor, including stale drafts.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      draftCommentId: PullRequestDraftUpdateInput.fields.draftCommentId,
+      body: PullRequestDraftUpdateInput.fields.body,
+    }),
+    success: PullRequestPersistedDraft,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_pull_request_delete_draft", {
+    ...managementShared,
+    description:
+      "Discard your unpublished platform draft. Published comments cannot be deleted through this tool.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      draftCommentId: PullRequestDraftRef.fields.draftCommentId,
+    }),
+    success: Schema.Void,
+  }).annotate(Tool.Readonly, false),
+
   Tool.make("t3_pull_request_reviewer_candidates", {
     ...managementShared,
     description: "List reviewers available to request.",
@@ -500,6 +550,8 @@ export const PullRequestsToolkit = Toolkit.make(
       verdict: PullRequestSubmitReviewInput.fields.verdict,
       body: PullRequestSubmitReviewInput.fields.body,
       comments: PullRequestSubmitReviewInput.fields.comments,
+      draftCommentIds: PullRequestSubmitReviewInput.fields.draftCommentIds,
+      expectedRevision: PullRequestSubmitReviewInput.fields.expectedRevision,
       expectedHeadSha: TrimmedNonEmptyString,
     }),
     success: PullRequestDetail,

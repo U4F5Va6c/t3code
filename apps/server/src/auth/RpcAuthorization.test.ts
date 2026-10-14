@@ -512,3 +512,17 @@ it.effect("denies repository directory and branch reads before service execution
     expect(handled).toBe(false);
   }).pipe(Effect.scoped),
 );
+
+it("assigns private draft reads and writes their existing scopes", () => {
+  expect(requiredScopeForRpcMethod(WS_METHODS.pullRequestsListReviewDrafts)).toBe(
+    requiredScopeForRpcMethod(WS_METHODS.pullRequestsDetail),
+  );
+  for (const method of [
+    WS_METHODS.pullRequestsCreateReviewDraft,
+    WS_METHODS.pullRequestsUpdateReviewDraft,
+    WS_METHODS.pullRequestsDeleteReviewDraft,
+  ])
+    expect(requiredScopeForRpcMethod(method)).toBe(
+      requiredScopeForRpcMethod(WS_METHODS.pullRequestsComment),
+    );
+});

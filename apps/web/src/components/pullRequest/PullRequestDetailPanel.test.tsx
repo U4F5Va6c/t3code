@@ -56,6 +56,10 @@ vi.mock("~/state/pullRequests", async (importOriginal) => ({
     // The header menu reads the stored guide to label "Write guide" or "Rewrite guide".
     reviewGuide: () => "review-guide",
     generateReviewGuide: { permissionAtom: () => "generate-review-guide" },
+    createReviewDraft: { permissionAtom: () => "create-review-draft" },
+    listReviewDrafts: {},
+    updateReviewDraft: {},
+    deleteReviewDraft: {},
   },
   usePullRequestTurnRefresh: () => 0,
   useSharedPullRequestSummary: () => null,

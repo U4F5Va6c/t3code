@@ -6,10 +6,20 @@
  * hosts that have no pending review of their own. That also means a draft lives only as long
  * as the tab does, which is why this is deliberately not persisted.
  */
-import type { PullRequestRef, PullRequestReviewCommentDraft } from "@t3tools/contracts";
+import type {
+  PullRequestRef,
+  PullRequestReviewCommentDraft,
+  PullRequestReviewRevision,
+} from "@t3tools/contracts";
 import { create } from "zustand";
 
-export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };
+export type PendingReviewComment = PullRequestReviewCommentDraft & {
+  readonly id: string;
+  readonly stale?: boolean;
+  readonly revision?: PullRequestReviewRevision;
+  readonly canEdit?: boolean;
+  readonly canDelete?: boolean;
+};
 
 /**
  * A counter rather than anything derived from the comment: two remarks on one line can be the
