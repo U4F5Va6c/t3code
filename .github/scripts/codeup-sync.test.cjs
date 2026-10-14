@@ -186,20 +186,14 @@ test("conflicts leave the remote untouched and preserve a patch and report", asy
   }
 });
 
-test("retries a failed release dispatch after the Nightly has already merged", async () => {
+test("an already merged Nightly leaves release builds to the push event", async () => {
   const f = fixture();
   try {
     f.addNightly(1);
     await sync({ ...f, context, core });
     f.run("push", "origin", "HEAD:codeup-integration");
-    const dispatch = f.github.rest.actions.createWorkflowDispatch;
-    f.github.rest.actions.createWorkflowDispatch = async () => {
-      throw Error("dispatch unavailable");
-    };
-    await assert.rejects(sync({ ...f, context, core, autoMerge: true }), /dispatch unavailable/);
-    f.github.rest.actions.createWorkflowDispatch = dispatch;
-    await sync({ ...f, context, core, autoMerge: true });
-    assert.deepEqual(f.counts(), { creates: 1, dispatches: 1 });
+    assert.equal((await sync({ ...f, context, core, autoMerge: true })).status, "current");
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 0 });
   } finally {
     f.cleanup();
   }
@@ -224,18 +218,46 @@ test("automatic merge requires approved PR CI, not a successful manual preview",
       head_branch: "sync/upstream-nightly",
       conclusion: "action_required",
     };
-    f.runs.push({ ...prRun, event: "workflow_dispatch", conclusion: "success" }, prRun);
+    f.runs.push(
+      { ...prRun, event: "workflow_dispatch", conclusion: "success" },
+      { ...prRun, head_sha: "0".repeat(40), conclusion: "success" },
+      prRun,
+    );
     await sync({ ...f, context, core, autoMerge: true });
     assert.equal(merges, 0);
     assert.equal(f.counts().dispatches, 0);
     prRun.conclusion = "success";
     await sync({ ...f, context, core, autoMerge: true });
     assert.equal(merges, 1);
-    assert.deepEqual(f.counts(), { creates: 1, dispatches: 1 });
-    assert.equal(f.runs[0].head_branch, "codeup-integration");
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 0 });
     await sync({ ...f, context, core, autoMerge: true });
-    assert.deepEqual(f.counts(), { creates: 1, dispatches: 1 });
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 0 });
   } finally {
     f.cleanup();
+  }
+});
+
+test("automatic merge still respects branch protection and a changed head", async () => {
+  for (const status of [405, 409]) {
+    const f = fixture();
+    try {
+      f.addNightly(1);
+      await sync({ ...f, context, core, autoMerge: true });
+      const base = f.run("rev-parse", "origin/codeup-integration");
+      f.runs.push({
+        event: "pull_request",
+        head_sha: f.run("rev-parse", "HEAD"),
+        head_branch: "sync/upstream-nightly",
+        conclusion: "success",
+      });
+      f.github.rest.pulls.merge = async () => {
+        throw Object.assign(Error("merge blocked"), { status });
+      };
+      await sync({ ...f, context, core, autoMerge: true });
+      assert.equal(f.run("rev-parse", "origin/codeup-integration"), base);
+      assert.deepEqual(f.counts(), { creates: 1, dispatches: 0 });
+    } finally {
+      f.cleanup();
+    }
   }
 });
