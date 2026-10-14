@@ -1483,7 +1483,7 @@ const layerWsRpc = (
               provider?.models.find((candidate) => candidate.isDefault)?.slug ??
               provider?.models[0]?.slug ??
               "default";
-            const commandId = CommandId.make(yield* crypto.randomUUIDv4.pipe(Effect.orDie));
+            const commandId = CommandId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie));
             const launched = yield* Effect.result(
               startup.enqueueCommand(
                 threadLaunch.launch({
