@@ -97,6 +97,9 @@ jobs:
           apps/server/src/workItems/WorkItemsService.test.ts
           apps/server/src/workItems/WorkItemsRpc.test.ts
           apps/server/src/persistence/WorkItemCreationReceiptRepository.test.ts
+          apps/server/src/persistence/CodeupMigrations.test.ts
+          apps/server/src/persistence/Migrations.test.ts
+          apps/server/src/persistence/reconcileV2PreviewMigration.test.ts
           apps/server/src/mcp/toolkits/workItems/handlers.test.ts
           apps/server/src/auth/EnvironmentAuth.test.ts
           apps/server/src/auth/McpOAuth.test.ts
