@@ -121,6 +121,36 @@ export function summarizeT3ToolCalls(
     case "t3_pull_requests":
       label = phrase("Listed", "list", `pull requests ${times}`);
       break;
+    case "t3_pull_request_reviewer_candidates":
+      label = phrase("Listed", "list", `reviewer candidates ${times}`);
+      break;
+    case "t3_pull_request_request_reviewers":
+      label = phrase("Updated", "update", `reviewer requests ${times}`);
+      break;
+    case "t3_pull_request_submit_review":
+      label = phrase("Submitted", "submit", `review ${times}`);
+      break;
+    case "t3_pull_request_comment":
+      label = phrase("Posted", "post", `comment ${times}`);
+      break;
+    case "t3_pull_request_update_comment":
+      label = phrase("Updated", "update", `comment ${times}`);
+      break;
+    case "t3_pull_request_thread_comments":
+      label = phrase("Read", "read", `discussion ${times}`);
+      break;
+    case "t3_pull_request_reply":
+      label = phrase("Replied to", "reply to", `discussion ${times}`);
+      break;
+    case "t3_pull_request_set_thread_resolved":
+      label = phrase("Updated", "update", `discussion resolution ${times}`);
+      break;
+    case "t3_pull_request_merge":
+      label = phrase("Merged", "merge", `pull request ${times}`);
+      break;
+    case "t3_pull_request_activity":
+      label = phrase("Read", "read", `pull request activity ${times}`);
+      break;
     case "t3_pull_request_detail":
       label = phrase("Read", "read", `pull request ${times}`);
       break;

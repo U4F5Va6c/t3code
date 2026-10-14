@@ -1136,6 +1136,7 @@ export const PullRequestStackHead = Schema.Struct({
 export type PullRequestStackHead = typeof PullRequestStackHead.Type;
 
 export const PullRequestActionInput = Schema.Struct({
+  expectedHeadSha: Schema.optional(TrimmedNonEmptyString),
   /** Native stack scope; only send to environments advertising pullRequestStackActions. */
   stackNumber: Schema.optional(PositiveInt),
   expectedStackHeads: Schema.optional(Schema.Array(PullRequestStackHead)),

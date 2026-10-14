@@ -2136,7 +2136,32 @@ export const make = Effect.gen(function* () {
                     ),
                   )
                 : Effect.succeed(false);
-            return mergeSettings.pipe(
+            // This fresh read is a preflight, not atomic fencing on hosts without a native guard.
+            const headPreflight =
+              input.expectedHeadSha === undefined
+                ? Effect.void
+                : project.api
+                    .getChangeRequest({
+                      cwd: project.project.workspaceRoot,
+                      repository: project.repository,
+                      host: project.host,
+                      number: input.number,
+                    })
+                    .pipe(
+                      Effect.mapError(toPullRequestError("runAction")),
+                      Effect.flatMap((current) =>
+                        current.headSha === input.expectedHeadSha
+                          ? Effect.void
+                          : Effect.fail(
+                              new PullRequestOperationError({
+                                operation: "runAction",
+                                detail: "The pull request head changed. Refresh before continuing.",
+                              }),
+                            ),
+                      ),
+                    );
+            return headPreflight.pipe(
+              Effect.andThen(mergeSettings),
               Effect.flatMap((removeAgentCreditsOnMerge) =>
                 project.api
                   .runAction({
@@ -2147,6 +2172,9 @@ export const make = Effect.gen(function* () {
                     action: input.action,
                     ...(removeAgentCreditsOnMerge ? { removeAgentCreditsOnMerge: true } : {}),
                     ...(input.stackNumber === undefined ? {} : { stackNumber: input.stackNumber }),
+                    ...(input.expectedHeadSha === undefined
+                      ? {}
+                      : { expectedHeadSha: input.expectedHeadSha }),
                     ...(input.expectedStackHeads === undefined
                       ? {}
                       : { expectedStackHeads: input.expectedStackHeads }),

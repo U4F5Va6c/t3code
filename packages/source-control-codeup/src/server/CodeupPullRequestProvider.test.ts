@@ -51,14 +51,21 @@ const compare = {
 function harness(
   options: {
     gate?: boolean;
+    changedAfterWrite?: boolean;
+    changedBeforeComment?: boolean;
+    afterChecks?: Partial<typeof mr>;
+    changedPatch?: "MERGE_SOURCE" | "MERGE_TARGET";
     access?: number;
     checks?: unknown;
     failWrite?: boolean;
     acceptedBeforeTimeout?: boolean;
     comments?: typeof Json.Comments.Type;
+    members?: typeof Json.Members.Type;
   } = {},
 ) {
   const requests: Array<{ method: string; url: string; body: unknown }> = [];
+  let patchReads = 0;
+  let checksRead = false;
   let status = mr.status;
   let title = mr.title;
   let description = mr.description;
@@ -76,7 +83,8 @@ function harness(
           : null,
     });
     let data: unknown;
-    if (url.pathname.endsWith("/comments/list")) data = comments;
+    if (url.pathname.endsWith("/members")) data = options.members ?? [];
+    else if (url.pathname.endsWith("/comments/list")) data = comments;
     else if (request.method !== "GET") {
       if (options.failWrite && !options.acceptedBeforeTimeout)
         return Effect.succeed(
@@ -103,16 +111,29 @@ function harness(
           HttpClientResponse.fromWeb(request, new Response("{}", { status: 503 })),
         );
       data = { result: true };
-    } else if (url.pathname.endsWith("/diffs/patches")) data = patchSets;
-    else if (url.pathname.endsWith("/compares")) data = compare;
-    else if (url.pathname.endsWith("/ciCheckList"))
+    } else if (url.pathname.endsWith("/diffs/patches")) {
+      patchReads++;
+      data = patchSets.map((patch) =>
+        (options.changedBeforeComment &&
+          patchReads > 1 &&
+          patch.relatedMergeItemType === "MERGE_SOURCE") ||
+        (checksRead && patch.relatedMergeItemType === options.changedPatch) ||
+        (options.changedAfterWrite &&
+          requests.some((r) => r.method === "POST") &&
+          patch.relatedMergeItemType === "MERGE_SOURCE")
+          ? { ...patch, commitId: "changed" }
+          : patch,
+      );
+    } else if (url.pathname.endsWith("/compares")) data = compare;
+    else if (url.pathname.endsWith("/ciCheckList")) {
+      checksRead = true;
       data = options.checks ?? {
         latest: true,
         item_count: 1,
         check_list: [{ task_name: "Build", state: "PASS", required: true, invalid: false }],
         commit_statuses: [],
       };
-    else if (url.pathname === "/oapi/v1/platform/user")
+    } else if (url.pathname === "/oapi/v1/platform/user")
       data = {
         id:
           request.headers["x-yunxiao-token"] === "other-token"
@@ -127,6 +148,7 @@ function harness(
         description,
         status,
         allRequirementsPass: options.gate ?? true,
+        ...(checksRead ? options.afterChecks : {}),
       };
     else if (url.pathname.endsWith("/changeRequests")) {
       const page = Number(url.searchParams.get("page"));
@@ -442,3 +464,152 @@ it.effect.each([false, true])(
     }).pipe(Effect.provide(layer));
   },
 );
+
+it.effect.each([
+  { targetBranch: "changed" },
+  { sourceBranch: "changed" },
+  { sourceProjectId: 99 },
+  { targetProjectId: 99 },
+  { allRequirementsPass: false },
+  { conflictCheckStatus: "CHECKING" },
+])("rejects changed merge identity or gates after checking: %j", (afterChecks) => {
+  const { layer, requests } = harness({ afterChecks });
+  return Effect.gen(function* () {
+    const provider = yield* Provider.make;
+    yield* provider
+      .runAction({ ...input, action: "merge", expectedHeadSha: "head" })
+      .pipe(Effect.flip);
+    expect(requests.every((request) => request.method === "GET")).toBe(true);
+  }).pipe(Effect.provide(layer));
+});
+it.effect.each(["MERGE_SOURCE", "MERGE_TARGET"] as const)(
+  "rejects changed %s during merge checks",
+  (changedPatch) => {
+    const { layer, requests } = harness({ changedPatch });
+    return Effect.gen(function* () {
+      const provider = yield* Provider.make;
+      yield* provider
+        .runAction({ ...input, action: "merge", expectedHeadSha: "head" })
+        .pipe(Effect.flip);
+      expect(requests.every((request) => request.method === "GET")).toBe(true);
+    }).pipe(Effect.provide(layer));
+  },
+);
+it.effect("rejects stale merge and missing or stale comment-review heads without writing", () => {
+  const { layer, requests } = harness();
+  return Effect.gen(function* () {
+    const provider = yield* Provider.make;
+    yield* provider
+      .runAction({ ...input, action: "merge", expectedHeadSha: "old" })
+      .pipe(Effect.flip);
+    for (const body of ["", "Review comment"])
+      for (const expectedHeadSha of [undefined, "old"])
+        yield* provider
+          .submitReview({
+            ...input,
+            verdict: "comment",
+            body,
+            comments: [],
+            ...(expectedHeadSha === undefined ? {} : { expectedHeadSha }),
+          })
+          .pipe(Effect.flip);
+    expect(requests.every((request) => request.method === "GET")).toBe(true);
+    yield* provider.submitReview({
+      ...input,
+      verdict: "comment",
+      body: "Review comment",
+      comments: [],
+      expectedHeadSha: "head",
+    });
+    expect(requests.filter((request) => request.method === "POST")).toHaveLength(1);
+  }).pipe(Effect.provide(layer));
+});
+it.effect("does not repeat uncertain merge or review writes", () => {
+  const { layer, requests } = harness({ failWrite: true, acceptedBeforeTimeout: true });
+  return Effect.gen(function* () {
+    const provider = yield* Provider.make;
+    yield* provider
+      .runAction({ ...input, action: "merge", expectedHeadSha: "head" })
+      .pipe(Effect.flip);
+    yield* provider
+      .submitReview({
+        ...input,
+        verdict: "approve",
+        body: "",
+        comments: [],
+        expectedHeadSha: "head",
+      })
+      .pipe(Effect.flip);
+    expect(requests.filter((request) => request.method === "POST")).toHaveLength(2);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("reports a changed head after a comment review without repeating the comment", () => {
+  const { layer, requests } = harness({ changedAfterWrite: true });
+  return Effect.gen(function* () {
+    const provider = yield* Provider.make;
+    const error = yield* provider
+      .submitReview({
+        ...input,
+        verdict: "comment",
+        body: "Reviewed",
+        comments: [],
+        expectedHeadSha: "head",
+      })
+      .pipe(Effect.flip);
+    expect(error.detail).toContain("accepted the review while the head changed");
+    expect(requests.filter((request) => request.method === "POST")).toHaveLength(1);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect(
+  "refuses a comment review if its patch changed between preflight and comment creation",
+  () => {
+    const { layer, requests } = harness({ changedBeforeComment: true });
+    return Effect.gen(function* () {
+      const provider = yield* Provider.make;
+      const error = yield* provider
+        .submitReview({
+          ...input,
+          verdict: "comment",
+          body: "Reviewed",
+          comments: [],
+          expectedHeadSha: "head",
+        })
+        .pipe(Effect.flip);
+      expect(error.detail).toContain("before the comment was posted");
+      expect(requests.every((request) => request.method === "GET")).toBe(true);
+    }).pipe(Effect.provide(layer));
+  },
+);
+
+it.effect("reads all reviewer candidates from the non-paginated members endpoint", () => {
+  const members = Array.from({ length: 105 }, (_, index) => ({
+    userId: `member-${index}`,
+    username: `member-${index}`,
+    name: `Member ${index}`,
+    avatarUrl: null,
+    state: "active",
+  }));
+  const { layer, requests } = harness({
+    members: [
+      ...members,
+      { ...members[0]!, userId: user.userId },
+      { ...members[0]!, userId: "blocked-member", state: "blocked" },
+    ],
+  });
+  return Effect.gen(function* () {
+    const provider = yield* Provider.make;
+    const result = yield* provider.listReviewerCandidates(input);
+    expect(result.candidates.map((candidate) => candidate.id)).toEqual(
+      members.map((member) => member.userId),
+    );
+    expect(result.truncated).toBe(false);
+    const memberRequests = requests.filter((request) =>
+      new URL(request.url).pathname.endsWith("/members"),
+    );
+    expect(memberRequests).toHaveLength(1);
+    expect(new URL(memberRequests[0]!.url).search).toBe("");
+    expect(memberRequests[0]!.method).toBe("GET");
+  }).pipe(Effect.provide(layer));
+});

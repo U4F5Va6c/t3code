@@ -417,8 +417,13 @@ const make = Effect.gen(function* () {
   ) {
     const ref = yield* managedReference(input, WS_METHODS.pullRequestsRunAction, true);
     const service = yield* PullRequestService.PullRequestService;
-    yield* service.runAction({ ...ref, action });
-    return yield* service.detail(ref);
+    return yield* service.withRoutingCredential(
+      ref,
+      Effect.gen(function* () {
+        yield* service.runAction({ ...ref, action });
+        return yield* service.detail(ref);
+      }),
+    );
   });
   const gitAction = Effect.fn("PullRequestsToolkit.gitAction")(function* (
     input: typeof ManagedGitInput.Type,
@@ -448,6 +453,125 @@ const make = Effect.gen(function* () {
   });
 
   return {
+    t3_pull_request_reviewer_candidates: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(
+          input,
+          WS_METHODS.pullRequestsReviewerCandidates,
+          false,
+        );
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          service.reviewerCandidates({ ...input, ...ref }),
+        );
+      }),
+    ),
+    t3_pull_request_request_reviewers: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsRequestReviewers, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.requestReviewers({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_submit_review: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsSubmitReview, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.submitReview({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_comment: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsComment, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.comment({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_update_comment: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsUpdateComment, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.updateComment({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_thread_comments: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsThreadComments, false);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          service.threadComments({ ...input, ...ref }),
+        );
+      }),
+    ),
+    t3_pull_request_reply: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsReplyToThread, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.replyToThread({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_set_thread_resolved: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(
+          input,
+          WS_METHODS.pullRequestsSetThreadResolution,
+          true,
+        );
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.setThreadResolution({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_merge: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsRunAction, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.runAction({ ...input, ...ref, action: "merge" });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
     t3_pull_requests: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
         yield* HostAccess.access(WS_METHODS.pullRequestsList, false, "pull-requests");
@@ -456,35 +580,66 @@ const make = Effect.gen(function* () {
         return yield* service.list({ ...input, projectIds: [input.projectId] });
       }),
     ),
+    t3_pull_request_activity: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsActivity);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.invalidate({ reference: ref });
+            return yield* service.activity(ref);
+          }),
+        );
+      }),
+    ),
     t3_pull_request_detail: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
         const ref = yield* managedReference(input, WS_METHODS.pullRequestsDetail);
         const service = yield* PullRequestService.PullRequestService;
-        yield* service.invalidate({ reference: ref });
-        return yield* service.detail(ref);
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.invalidate({ reference: ref });
+            return yield* service.detail(ref);
+          }),
+        );
       }),
     ),
     t3_pull_request_diff: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
         const ref = yield* managedReference(input, WS_METHODS.pullRequestsDiffFileContents);
         const service = yield* PullRequestService.PullRequestService;
-        yield* service.invalidate({ reference: ref });
-        return yield* service.diff({ ...input, ...ref });
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.invalidate({ reference: ref });
+            return yield* service.diff({ ...input, ...ref });
+          }),
+        );
       }),
     ),
     t3_pull_request_file_contents: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
         const ref = yield* managedReference(input, WS_METHODS.pullRequestsDiffFileContents);
         const service = yield* PullRequestService.PullRequestService;
-        return yield* service.diffFileContents({ ...input, ...ref });
+        return yield* service.withRoutingCredential(
+          ref,
+          service.diffFileContents({ ...input, ...ref }),
+        );
       }),
     ),
     t3_pull_request_edit: McpToolAccess.writesWithCapability((input) =>
       Effect.gen(function* () {
         const ref = yield* managedReference(input, WS_METHODS.pullRequestsUpdate, true);
         const service = yield* PullRequestService.PullRequestService;
-        yield* service.update({ ...input, ...ref });
-        return yield* service.detail(ref);
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.update({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
       }),
     ),
     t3_pull_request_close: McpToolAccess.writesWithCapability((input) =>

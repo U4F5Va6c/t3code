@@ -295,3 +295,9 @@ it("summarizes directory page reads without claiming a complete repository inven
     ]).label,
   ).toBe("Read repository branches 1 time");
 });
+
+it("summarizes native pull request activity reads", () => {
+  expect(summarizeT3ToolCalls("t3_pull_request_activity", [completed({ number: 7 })]).label).toBe(
+    "Read pull request activity 1 time",
+  );
+});

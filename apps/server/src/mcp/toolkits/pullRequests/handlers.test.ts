@@ -12,6 +12,7 @@ import {
   ThreadId,
   type OrchestrationV2ServerCommand as OrchestrationCommand,
   PullRequestOperationError,
+  type PullRequestActivity,
   type OrchestrationProjectShell,
   type PullRequestRef,
   type PullRequestReviewGuideResult,
@@ -19,6 +20,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -39,6 +41,10 @@ import * as McpToolAccessTestkit from "../../McpToolAccess.testkit.ts";
 import { listThreadPullRequests } from "./handlers.ts";
 import * as PullRequestsHandlers from "./handlers.ts";
 import { PullRequestLinkFailedError, PullRequestsToolkit } from "./tools.ts";
+
+const verifiedCredential = Context.Reference<string | null>("test/prCredential", {
+  defaultValue: () => null,
+});
 
 const PROJECT_ID = ProjectId.make("project-1");
 const THREAD_ID = ThreadId.make("thread-1");
@@ -142,6 +148,7 @@ function makeLink(
 }
 
 interface HarnessOptions {
+  readonly mutationFails?: boolean;
   readonly callerModes?: Parameters<typeof McpToolAccessTestkit.liveThreadShell>[1];
   readonly thread?: PullRequestTestThread | null;
   readonly project?: OrchestrationProjectShell | null;
@@ -158,6 +165,38 @@ interface HarnessOptions {
   >;
 }
 
+const ACTIVITY: PullRequestActivity = {
+  comments: [
+    {
+      id: "comment-1",
+      kind: "issue-comment",
+      author: null,
+      body: "Review me",
+      createdAt: "2026-10-14T00:00:00Z",
+      url: null,
+      path: null,
+      reviewState: null,
+      resolution: { threadId: "discussion-1", isResolved: false, isOutdated: false },
+    },
+  ],
+  commentCount: 3,
+  commentsTruncated: true,
+  reviewThreads: [
+    {
+      id: "thread-1",
+      path: "file.ts",
+      line: 1,
+      side: "right",
+      isResolved: false,
+      isOutdated: false,
+      comments: [],
+      nextCommentsCursor: "next",
+    },
+  ],
+  reviewThreadsTruncated: true,
+  commits: [],
+};
+
 const NO_GUIDE: PullRequestReviewGuideResult = { guide: null, run: null, currentHeadSha: "head-1" };
 
 const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
@@ -165,6 +204,9 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
 ) {
   const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
   const managementRequests: unknown[] = [];
+  const credentialContexts: Array<string | null> = [];
+  const routingRequests: PullRequestRef[] = [];
+  const invalidations: unknown[] = [];
   const guideRequests = yield* Ref.make<ReadonlyArray<PullRequestRef>>([]);
   const thread = options.thread === undefined ? makeThread([]) : options.thread;
   const project = options.project === undefined ? makeProject() : options.project;
@@ -191,13 +233,167 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
     Layer.mock(ProjectStore.ProjectStoreV2)({}),
     Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
     Layer.mock(PullRequestService.PullRequestService)({
-      invalidate: () => Effect.void,
-      update: (input) =>
+      withRoutingCredential: (ref, operation) =>
+        Effect.gen(function* () {
+          routingRequests.push(ref);
+          if (ref.expectedAccountId !== undefined && ref.expectedAccountId !== "account")
+            return yield* new PullRequestOperationError({
+              operation: "routeIdentity",
+              detail: "Account mismatch",
+            });
+          return yield* operation.pipe(
+            Effect.provideService(verifiedCredential, `credential-${routingRequests.length}`),
+          );
+        }),
+      invalidate: (input) =>
         Effect.sync(() => {
+          invalidations.push(input);
+        }),
+      diffFileContents: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+          return { oldContents: "before", newContents: "after" };
+        }),
+      requestReviewers: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+        }).pipe(
+          Effect.andThen(
+            options.mutationFails
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "requestReviewers",
+                    detail: "Uncertain write; refresh before retrying.",
+                  }),
+                )
+              : Effect.void,
+          ),
+        ),
+      submitReview: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+        }).pipe(
+          Effect.andThen(
+            options.mutationFails
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "submitReview",
+                    detail: "Uncertain write; refresh before retrying.",
+                  }),
+                )
+              : Effect.void,
+          ),
+        ),
+      comment: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+        }).pipe(
+          Effect.andThen(
+            options.mutationFails
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "comment",
+                    detail: "Uncertain write; refresh before retrying.",
+                  }),
+                )
+              : Effect.void,
+          ),
+        ),
+      updateComment: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+        }).pipe(
+          Effect.andThen(
+            options.mutationFails
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "updateComment",
+                    detail: "Uncertain write; refresh before retrying.",
+                  }),
+                )
+              : Effect.void,
+          ),
+        ),
+      replyToThread: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+        }).pipe(
+          Effect.andThen(
+            options.mutationFails
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "replyToThread",
+                    detail: "Uncertain write; refresh before retrying.",
+                  }),
+                )
+              : Effect.void,
+          ),
+        ),
+      setThreadResolution: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+        }).pipe(
+          Effect.andThen(
+            options.mutationFails
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "setThreadResolution",
+                    detail: "Uncertain write; refresh before retrying.",
+                  }),
+                )
+              : Effect.void,
+          ),
+        ),
+      runAction: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+        }).pipe(
+          Effect.andThen(
+            options.mutationFails
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "runAction",
+                    detail: "Uncertain write; refresh before retrying.",
+                  }),
+                )
+              : Effect.void,
+          ),
+        ),
+      reviewerCandidates: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+          return { candidates: [], truncated: false };
+        }),
+      threadComments: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+          return { comments: [], nextCursor: null };
+        }),
+
+      update: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
           managementRequests.push(input);
         }),
+      activity: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+          return ACTIVITY;
+        }),
       detail: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
           managementRequests.push(input);
         }).pipe(
           Effect.andThen(
@@ -210,7 +406,8 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
           ),
         ),
       diff: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
           managementRequests.push(input);
           return { patch: "binary", truncated: true, nextCursor: "next" };
         }),
@@ -271,7 +468,15 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
       Effect.provide(layerDependencies),
     );
-  return { commands, guideRequests, managementRequests, call };
+  return {
+    commands,
+    guideRequests,
+    managementRequests,
+    routingRequests,
+    credentialContexts,
+    invalidations,
+    call,
+  };
 });
 
 describe("pull request toolkit handlers", () => {
@@ -803,6 +1008,186 @@ describe("native pull request management access", () => {
       ...(scopes === undefined ? {} : { scopes }),
     },
   });
+  it.effect("guards both review reads and preserves account and pagination", () =>
+    Effect.gen(function* () {
+      for (const name of [
+        "t3_pull_request_activity",
+        "t3_pull_request_reviewer_candidates",
+        "t3_pull_request_thread_comments",
+      ] as const) {
+        const params = {
+          ...ref,
+          expectedAccountId: "account",
+          threadId: "discussion",
+          cursor: "next",
+        };
+        for (const scope of [
+          oauth("read-only", []),
+          {
+            ...oauth("read-only", ["orchestration:read"]),
+            environmentId: EnvironmentId.make("other"),
+          },
+          {
+            ...oauth("read-only", ["orchestration:read"]),
+            capabilities: new Set<McpInvocationContext.McpCapability>(),
+          },
+        ]) {
+          const harness = yield* makeHarness();
+          yield* harness.call(name, params, [], scope).pipe(Effect.flip);
+          expect(harness.managementRequests).toEqual([]);
+        }
+        const harness = yield* makeHarness();
+        yield* harness.call(name, { ...params, host: "other.test" }).pipe(Effect.flip);
+        expect(harness.managementRequests).toEqual([]);
+        yield* harness.call(name, params, [], oauth("read-only", ["orchestration:read"]));
+        expect(harness.managementRequests).toHaveLength(1);
+        expect(harness.managementRequests[0]).toMatchObject({
+          ...ref,
+          expectedAccountId: "account",
+        });
+        if (name === "t3_pull_request_thread_comments")
+          expect(harness.managementRequests[0]).toMatchObject({
+            threadId: "discussion",
+            cursor: "next",
+          });
+      }
+    }),
+  );
+  const reviewWrites = [
+    [
+      "t3_pull_request_request_reviewers",
+      { reviewers: [{ id: "reviewer", kind: "user" }], requested: true },
+    ],
+    [
+      "t3_pull_request_submit_review",
+      { expectedHeadSha: "head", verdict: "approve", body: "", comments: [] },
+    ],
+    ["t3_pull_request_comment", { body: "Comment" }],
+    [
+      "t3_pull_request_update_comment",
+      { commentId: "comment", kind: "issue-comment", body: "Updated" },
+    ],
+    ["t3_pull_request_reply", { threadId: "discussion", body: "Reply" }],
+    ["t3_pull_request_set_thread_resolved", { threadId: "discussion", resolved: true }],
+    ["t3_pull_request_merge", { expectedHeadSha: "head", mergeMethod: "merge" }],
+  ] as const;
+  const allManagedTools = [
+    ...reviewWrites,
+    ["t3_pull_request_reviewer_candidates", {}],
+    ["t3_pull_request_thread_comments", { threadId: "discussion", cursor: "cursor" }],
+    ["t3_pull_request_activity", {}],
+    ["t3_pull_request_detail", {}],
+    ["t3_pull_request_diff", {}],
+    ["t3_pull_request_file_contents", { changeType: "change", oldPath: "file", newPath: "file" }],
+    ["t3_pull_request_edit", { title: "Updated" }],
+    ["t3_pull_request_close", {}],
+    ["t3_pull_request_reopen", {}],
+  ] as const;
+  it.effect.each(allManagedTools)(
+    "verifies account before any operation and pins readback for %s",
+    ([name, params]) =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness();
+        const error = yield* harness
+          .call(name, { ...ref, ...params, expectedAccountId: "wrong-account" })
+          .pipe(Effect.flip);
+        expect(error).toMatchObject({ operation: "routeIdentity" });
+        expect(harness.managementRequests).toEqual([]);
+        expect(harness.invalidations).toEqual([]);
+        expect(harness.routingRequests).toHaveLength(1);
+        yield* harness
+          .call(name, { ...ref, ...params, expectedAccountId: "account" })
+          .pipe(Effect.result);
+        expect(harness.managementRequests.length).toBeGreaterThan(0);
+        expect(harness.routingRequests).toHaveLength(2);
+        expect(harness.credentialContexts).toEqual(
+          harness.managementRequests.map(() => "credential-2"),
+        );
+        const writes =
+          reviewWrites.some(([tool]) => tool === name) ||
+          ["t3_pull_request_edit", "t3_pull_request_close", "t3_pull_request_reopen"].includes(
+            name,
+          );
+        expect(harness.managementRequests).toHaveLength(writes ? 2 : 1);
+      }),
+  );
+  it.effect.each(reviewWrites)(
+    "guards %s and preserves its exact input without retry",
+    ([name, params]) =>
+      Effect.gen(function* () {
+        for (const scope of [
+          oauth("full-access"),
+          oauth("full-access", []),
+          oauth("read-only", ["source-control:write"]),
+          oauth("approval-required", ["source-control:write"]),
+          {
+            ...oauth("full-access", ["source-control:write"]),
+            environmentId: EnvironmentId.make("other"),
+          },
+          {
+            ...oauth("full-access", ["source-control:write"]),
+            capabilities: new Set<McpInvocationContext.McpCapability>(),
+          },
+        ]) {
+          const harness = yield* makeHarness();
+          yield* harness.call(name, { ...ref, ...params }, [], scope).pipe(Effect.flip);
+          expect(harness.managementRequests).toEqual([]);
+        }
+        for (const callerModes of [
+          { runtimeMode: "approval-required" as const },
+          { interactionMode: "plan" as const },
+          { activeRunId: null },
+        ]) {
+          const harness = yield* makeHarness({ callerModes });
+          yield* harness.call(name, { ...ref, ...params }).pipe(Effect.flip);
+          expect(harness.managementRequests).toEqual([]);
+        }
+        for (const target of [
+          { ...ref, host: "other.test" },
+          { ...ref, url: "https://github.com/other/repo/pull/1" },
+          { ...ref, url: "https://github.com/t3tools/t3code/pull/2" },
+        ]) {
+          const harness = yield* makeHarness();
+          yield* harness.call(name, { ...target, ...params }).pipe(Effect.flip);
+          expect(harness.managementRequests).toEqual([]);
+        }
+        const harness = yield* makeHarness({ mutationFails: true });
+        const error = yield* harness
+          .call(name, { ...ref, ...params, expectedAccountId: "account" })
+          .pipe(Effect.flip);
+        expect(error).toMatchObject({ detail: "Uncertain write; refresh before retrying." });
+        expect(harness.managementRequests).toHaveLength(1);
+        expect(harness.managementRequests[0]).toMatchObject({
+          ...ref,
+          ...params,
+          expectedAccountId: "account",
+        });
+      }),
+  );
+  it.effect("supports request withdrawal and discussion reopening with a fresh detail read", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      for (const value of [true, false]) {
+        yield* harness
+          .call("t3_pull_request_request_reviewers", {
+            ...ref,
+            reviewers: [{ id: "reviewer", kind: "user" }],
+            requested: value,
+          })
+          .pipe(Effect.flip);
+        yield* harness
+          .call("t3_pull_request_set_thread_resolved", {
+            ...ref,
+            threadId: "discussion",
+            resolved: value,
+          })
+          .pipe(Effect.flip);
+      }
+      expect(harness.managementRequests).toHaveLength(8);
+      expect(harness.managementRequests[4]).toMatchObject({ requested: false });
+      expect(harness.managementRequests[6]).toMatchObject({ resolved: false });
+    }),
+  );
   it.effect.each([
     oauth("full-access"),
     oauth("full-access", []),
@@ -895,3 +1280,20 @@ describe("native pull request management access", () => {
     }),
   );
 });
+
+it.effect("refreshes native activity and returns comment and discussion identities unchanged", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeHarness();
+    const input = {
+      projectId: PROJECT_ID,
+      repository: "t3tools/t3code",
+      number: 1,
+      expectedAccountId: "account",
+    };
+    const result = yield* harness.call("t3_pull_request_activity", input);
+    expect(result).toEqual(ACTIVITY);
+    expect(harness.invalidations).toEqual([{ reference: { ...input, host: "github.com" } }]);
+    expect(harness.routingRequests).toHaveLength(1);
+    expect(harness.credentialContexts).toEqual(["credential-1"]);
+  }),
+);

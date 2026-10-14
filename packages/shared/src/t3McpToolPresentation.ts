@@ -9,6 +9,16 @@ export type T3McpToolSummaryAction =
   | "t3_source_control_publish"
   | "t3_source_control_lookup"
   | "t3_pull_requests"
+  | "t3_pull_request_reviewer_candidates"
+  | "t3_pull_request_request_reviewers"
+  | "t3_pull_request_submit_review"
+  | "t3_pull_request_comment"
+  | "t3_pull_request_update_comment"
+  | "t3_pull_request_thread_comments"
+  | "t3_pull_request_reply"
+  | "t3_pull_request_set_thread_resolved"
+  | "t3_pull_request_merge"
+  | "t3_pull_request_activity"
   | "t3_pull_request_detail"
   | "t3_pull_request_diff"
   | "t3_pull_request_file_contents"
@@ -108,6 +118,46 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "t3_source_control_lookup",
   ),
   t3_pull_requests: tool(["List", "Listing", "Listed", "pull requests"], "t3_pull_requests"),
+  t3_pull_request_reviewer_candidates: tool(
+    ["List", "Listing", "Listed", "reviewer candidates"],
+    "t3_pull_request_reviewer_candidates",
+  ),
+  t3_pull_request_request_reviewers: tool(
+    ["Update", "Updating", "Updated", "reviewer requests"],
+    "t3_pull_request_request_reviewers",
+  ),
+  t3_pull_request_submit_review: tool(
+    ["Submit", "Submitting", "Submitted", "review"],
+    "t3_pull_request_submit_review",
+  ),
+  t3_pull_request_comment: tool(
+    ["Post", "Posting", "Posted", "comment"],
+    "t3_pull_request_comment",
+  ),
+  t3_pull_request_update_comment: tool(
+    ["Update", "Updating", "Updated", "comment"],
+    "t3_pull_request_update_comment",
+  ),
+  t3_pull_request_thread_comments: tool(
+    ["Read", "Reading", "Read", "discussion"],
+    "t3_pull_request_thread_comments",
+  ),
+  t3_pull_request_reply: tool(
+    ["Reply to", "Replying to", "Replied to", "discussion"],
+    "t3_pull_request_reply",
+  ),
+  t3_pull_request_set_thread_resolved: tool(
+    ["Update", "Updating", "Updated", "discussion resolution"],
+    "t3_pull_request_set_thread_resolved",
+  ),
+  t3_pull_request_merge: tool(
+    ["Merge", "Merging", "Merged", "pull request"],
+    "t3_pull_request_merge",
+  ),
+  t3_pull_request_activity: tool(
+    ["Read", "Reading", "Read", "pull request activity"],
+    "t3_pull_request_activity",
+  ),
   t3_pull_request_detail: tool(
     ["Read", "Reading", "Read", "pull request"],
     "t3_pull_request_detail",
