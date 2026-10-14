@@ -1,4 +1,5 @@
 import {
+  SourceControlProviderKind,
   AuthEnvironmentMaintainScope,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
@@ -32,6 +33,14 @@ import {
 import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it("requires read scope for both repository directory operations", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.sourceControlListRepositories)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.sourceControlListBranches)).toBe(
+      AuthOrchestrationReadScope,
+    );
+  });
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
   });
@@ -451,3 +460,69 @@ it.effect("denies manual cleanup before the handler without settings permission"
     expect(handled).toBe(false);
   }).pipe(Effect.scoped),
 );
+
+it.effect("denies repository directory and branch reads before service execution", () =>
+  Effect.gen(function* () {
+    const tested = [
+      WS_METHODS.sourceControlListRepositories,
+      WS_METHODS.sourceControlListBranches,
+    ] as const;
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof tested)[number]> =>
+          !(tested as ReadonlyArray<string>).includes(tag),
+      ),
+    );
+    let handled = false;
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          group.toLayerHandler(WS_METHODS.sourceControlListRepositories, () =>
+            Effect.sync(() => {
+              handled = true;
+              return { repositories: [], nextPage: null };
+            }),
+          ),
+          group.toLayerHandler(WS_METHODS.sourceControlListBranches, () =>
+            Effect.sync(() => {
+              handled = true;
+            }).pipe(Effect.andThen(Effect.never)),
+          ),
+          RpcAuthorization.layer([AuthSourceControlWriteScope]),
+        ),
+      ),
+    );
+    const input = {
+      provider: SourceControlProviderKind.make("codeup"),
+      apiHost: "openapi-rdc.aliyuncs.com",
+      organizationId: "org-a",
+      page: 1,
+      perPage: 20,
+    };
+    expect(
+      yield* client[WS_METHODS.sourceControlListRepositories](input).pipe(Effect.flip),
+    ).toMatchObject({ requiredPermission: AuthOrchestrationReadScope });
+    expect(
+      yield* client[WS_METHODS.sourceControlListBranches]({
+        ...input,
+        repository: "org-a/repo",
+        repositoryId: "123",
+      }).pipe(Effect.flip),
+    ).toMatchObject({ requiredPermission: AuthOrchestrationReadScope });
+    expect(handled).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
+it("assigns private draft reads and writes their existing scopes", () => {
+  expect(requiredScopeForRpcMethod(WS_METHODS.pullRequestsListReviewDrafts)).toBe(
+    requiredScopeForRpcMethod(WS_METHODS.pullRequestsDetail),
+  );
+  for (const method of [
+    WS_METHODS.pullRequestsCreateReviewDraft,
+    WS_METHODS.pullRequestsUpdateReviewDraft,
+    WS_METHODS.pullRequestsDeleteReviewDraft,
+  ])
+    expect(requiredScopeForRpcMethod(method)).toBe(
+      requiredScopeForRpcMethod(WS_METHODS.pullRequestsComment),
+    );
+});

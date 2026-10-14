@@ -1,4 +1,37 @@
 import {
+  PullRequestDraftList,
+  PullRequestDraftCreateInput,
+  PullRequestDraftUpdateInput,
+  PullRequestDraftRef,
+  PullRequestPersistedDraft,
+} from "@t3tools/contracts";
+import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
+import {
+  ProjectId,
+  PullRequestReviewerCandidateList,
+  PullRequestReviewerRequestInput,
+  PullRequestSubmitReviewInput,
+  PullRequestCommentInput,
+  PullRequestCommentUpdateInput,
+  PullRequestThreadCommentsInput,
+  PullRequestThreadCommentsResult,
+  PullRequestThreadReplyInput,
+  PullRequestThreadResolutionInput,
+  PullRequestMergeMethod,
+  PullRequestRef,
+  PullRequestListInput,
+  PullRequestListResult,
+  PullRequestDetail,
+  PullRequestActivity,
+  PullRequestDiffInput,
+  PullRequestDiffResult,
+  PullRequestDiffFileContentsInput,
+  PullRequestDiffFileContentsResult,
+  PullRequestUpdateInput,
+  PullRequestUnavailableError,
+  PullRequestOperationError,
+  GitRunStackedActionResult,
+  GitManagerServiceError,
   McpCapabilityUnavailableError,
   OrchestratorMcpFailure,
   PositiveInt,
@@ -9,6 +42,12 @@ import {
   TrimmedNonEmptyString,
   ThreadId,
 } from "@t3tools/contracts";
+import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
+import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
+import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
+import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
+import * as VcsStatusBroadcaster from "../../../vcs/VcsStatusBroadcaster.ts";
+import * as Crypto from "effect/Crypto";
 import * as Schema from "effect/Schema";
 import * as Tool from "effect/ai/Tool";
 import * as Toolkit from "effect/ai/Toolkit";
@@ -204,6 +243,9 @@ export const PullRequestToolError = Schema.Union([
   PullRequestWatchFromSubagentError,
   PullRequestProjectNotFoundError,
   PullRequestGuideFailedError,
+  PullRequestUnavailableError,
+  PullRequestOperationError,
+  GitManagerServiceError,
 ]);
 export type PullRequestToolError = typeof PullRequestToolError.Type;
 
@@ -411,7 +453,261 @@ const ReadPullRequestGuideTool = Tool.make("read_pull_request_guide", {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, true);
 
+const managementShared = {
+  failure: PullRequestToolError,
+  dependencies: [
+    ...dependencies,
+    RepositoryIdentityResolver.RepositoryIdentityResolver,
+    PullRequestService.PullRequestService,
+    ServerEnvironment.ServerEnvironment,
+    GitWorkflowService.GitWorkflowService,
+    ProjectStore.ProjectStoreV2,
+    VcsStatusBroadcaster.VcsStatusBroadcaster,
+    Crypto.Crypto,
+  ],
+};
+export const ManagedPullRequestTarget = Schema.Struct({
+  projectId: ProjectId,
+  url: PullRequestTargetInput.fields.url,
+  repository: PullRequestTargetInput.fields.repository,
+  number: PullRequestTargetInput.fields.number,
+  host: PullRequestTargetInput.fields.host,
+  expectedAccountId: PullRequestRef.fields.expectedAccountId,
+});
+export const ManagedGitInput = Schema.Struct({
+  projectId: ProjectId,
+  threadId: Schema.optional(ThreadId),
+});
+
 export const PullRequestsToolkit = Toolkit.make(
+  Tool.make("t3_pull_request_drafts", {
+    ...managementShared,
+    description:
+      "Read only your private platform review drafts with their original revision and stale status.",
+    parameters: Schema.Struct({ ...ManagedPullRequestTarget.fields }),
+    success: PullRequestDraftList,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("t3_pull_request_create_draft", {
+    ...managementShared,
+    description:
+      "Create a private inline draft using the complete revision returned by the reviewed diff. Refresh after uncertain failure; never blindly retry.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      path: PullRequestDraftCreateInput.fields.path,
+      oldPath: PullRequestDraftCreateInput.fields.oldPath,
+      position: PullRequestDraftCreateInput.fields.position,
+      body: PullRequestDraftCreateInput.fields.body,
+      expectedRevision: PullRequestDraftCreateInput.fields.expectedRevision,
+    }),
+    success: PullRequestPersistedDraft,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_pull_request_update_draft", {
+    ...managementShared,
+    description:
+      "Edit your unpublished draft body without moving its original anchor, including stale drafts.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      draftCommentId: PullRequestDraftUpdateInput.fields.draftCommentId,
+      body: PullRequestDraftUpdateInput.fields.body,
+    }),
+    success: PullRequestPersistedDraft,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_pull_request_delete_draft", {
+    ...managementShared,
+    description:
+      "Discard your unpublished platform draft. Published comments cannot be deleted through this tool.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      draftCommentId: PullRequestDraftRef.fields.draftCommentId,
+    }),
+    success: Schema.Void,
+  }).annotate(Tool.Readonly, false),
+
+  Tool.make("t3_pull_request_reviewer_candidates", {
+    ...managementShared,
+    description: "List reviewers available to request.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+    }),
+    success: PullRequestReviewerCandidateList,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("t3_pull_request_request_reviewers", {
+    ...managementShared,
+    description: "Request reviewers or withdraw requests with requested=false.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      reviewers: PullRequestReviewerRequestInput.fields.reviewers,
+      requested: PullRequestReviewerRequestInput.fields.requested,
+    }),
+    success: PullRequestDetail,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_pull_request_submit_review", {
+    ...managementShared,
+    description:
+      "Submit a review for the displayed expectedHeadSha. On uncertain failure refresh before retrying.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      verdict: PullRequestSubmitReviewInput.fields.verdict,
+      body: PullRequestSubmitReviewInput.fields.body,
+      comments: PullRequestSubmitReviewInput.fields.comments,
+      draftCommentIds: PullRequestSubmitReviewInput.fields.draftCommentIds,
+      expectedRevision: PullRequestSubmitReviewInput.fields.expectedRevision,
+      expectedHeadSha: TrimmedNonEmptyString,
+    }),
+    success: PullRequestDetail,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_pull_request_comment", {
+    ...managementShared,
+    description: "Post an overall comment. On uncertain failure refresh before retrying.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      body: PullRequestCommentInput.fields.body,
+    }),
+    success: PullRequestDetail,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_pull_request_update_comment", {
+    ...managementShared,
+    description: "Update an existing comment.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      commentId: PullRequestCommentUpdateInput.fields.commentId,
+      kind: PullRequestCommentUpdateInput.fields.kind,
+      body: PullRequestCommentUpdateInput.fields.body,
+    }),
+    success: PullRequestDetail,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_pull_request_thread_comments", {
+    ...managementShared,
+    description: "Read the next page of discussion comments.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      threadId: PullRequestThreadCommentsInput.fields.threadId,
+      cursor: PullRequestThreadCommentsInput.fields.cursor,
+    }),
+    success: PullRequestThreadCommentsResult,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("t3_pull_request_reply", {
+    ...managementShared,
+    description: "Reply to a discussion. On uncertain failure refresh before retrying.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      threadId: PullRequestThreadReplyInput.fields.threadId,
+      body: PullRequestThreadReplyInput.fields.body,
+    }),
+    success: PullRequestDetail,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_pull_request_set_thread_resolved", {
+    ...managementShared,
+    description: "Resolve or reopen a discussion with resolved=false.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      threadId: PullRequestThreadResolutionInput.fields.threadId,
+      resolved: PullRequestThreadResolutionInput.fields.resolved,
+    }),
+    success: PullRequestDetail,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_pull_request_merge", {
+    ...managementShared,
+    description:
+      "Merge using an explicit strategy and expected head. Head preflight is not atomic on hosts without native fencing. On uncertain failure refresh before retrying.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      expectedHeadSha: TrimmedNonEmptyString,
+      mergeMethod: PullRequestMergeMethod,
+    }),
+    success: PullRequestDetail,
+  }).annotate(Tool.Readonly, false),
+
+  Tool.make("t3_pull_requests", {
+    ...managementShared,
+    description:
+      "List one project's pull requests, including closed/merged states and host search. Preserve nextCursors and truncated when fetching further pages.",
+    parameters: Schema.Struct({ ...PullRequestListInput.fields, projectId: ProjectId }),
+    success: PullRequestListResult,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("t3_pull_request_activity", {
+    ...managementShared,
+    description:
+      "Read fresh comments, review threads and commits, including comment and thread IDs needed to edit, reply or resolve. Preserve truncation and thread pagination cursors.",
+    parameters: ManagedPullRequestTarget,
+    success: PullRequestActivity,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("t3_pull_request_detail", {
+    ...managementShared,
+    description:
+      "Read a fresh pull request, native identity, current head SHA and capabilities through this environment's project. Pass URL or repository plus number; supplied identities must agree.",
+    parameters: ManagedPullRequestTarget,
+    success: PullRequestDetail,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("t3_pull_request_diff", {
+    ...managementShared,
+    description:
+      "Read a current pull request diff slice. Carry cursor forward; commit selects an exact commit. truncated includes binary or omitted hunks and must not be treated as a complete text diff.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      cursor: PullRequestDiffInput.fields.cursor,
+      commit: PullRequestDiffInput.fields.commit,
+    }),
+    success: PullRequestDiffResult,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("t3_pull_request_file_contents", {
+    ...managementShared,
+    description:
+      "Read old/new file contents for a pull request comparison, preserving the provider's exact-revision checks.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      commit: PullRequestDiffFileContentsInput.fields.commit,
+      changeType: PullRequestDiffFileContentsInput.fields.changeType,
+      oldPath: PullRequestDiffFileContentsInput.fields.oldPath,
+      newPath: PullRequestDiffFileContentsInput.fields.newPath,
+    }),
+    success: PullRequestDiffFileContentsResult,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("t3_pull_request_edit", {
+    ...managementShared,
+    description:
+      "Edit the title and/or description of an existing pull request, then read its confirmed state.",
+    parameters: Schema.Struct({
+      ...ManagedPullRequestTarget.fields,
+      title: PullRequestUpdateInput.fields.title,
+      body: PullRequestUpdateInput.fields.body,
+    }),
+    success: PullRequestDetail,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Idempotent, true),
+  Tool.make("t3_pull_request_close", {
+    ...managementShared,
+    description: "Close an existing pull request and read the confirmed state.",
+    parameters: ManagedPullRequestTarget,
+    success: PullRequestDetail,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Idempotent, true),
+  Tool.make("t3_pull_request_reopen", {
+    ...managementShared,
+    description:
+      "Reopen a closed pull request when the provider supports it and read the confirmed state.",
+    parameters: ManagedPullRequestTarget,
+    success: PullRequestDetail,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Idempotent, true),
+  Tool.make("t3_pull_request_create", {
+    ...managementShared,
+    description:
+      "Create or find the pull request for the project's current branch (or the specified thread's worktree), using the same workflow as the UI: push existing commits, use the actual default/stack base branch and automatically generate title/body. Does not accept arbitrary cross-repository sources or targets and does not commit working tree changes. A supplied thread is linked after creation.",
+    parameters: ManagedGitInput,
+    success: GitRunStackedActionResult,
+  }).annotate(Tool.Readonly, false),
+  Tool.make("t3_git_push", {
+    ...managementShared,
+    description:
+      "Push the project's current branch (or the specified thread's worktree) with the existing UI Git workflow and refresh linked pull requests. Does not commit working tree changes.",
+    parameters: ManagedGitInput,
+    success: GitRunStackedActionResult,
+  }).annotate(Tool.Readonly, false),
+
   LinkPullRequestTool,
   UnlinkPullRequestTool,
   ListThreadPullRequestsTool,

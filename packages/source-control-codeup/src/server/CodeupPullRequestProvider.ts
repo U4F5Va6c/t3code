@@ -1,5 +1,8 @@
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   type PullRequestCapabilities,
+  type PullRequestReviewRevision,
+  type PullRequestPersistedDraft,
   type PullRequestViewerPermissions,
 } from "@t3tools/contracts";
 import {
@@ -28,9 +31,10 @@ const capabilities: PullRequestCapabilities = {
   actions: ["close", "reopen", "merge"],
   mergeMethods: ["merge", "squash", "rebase"],
   viewedFiles: "environment",
-  // T3's review drafts carry no patch-set identity. Do not attach old lines to a new version.
+  // Mobile retains the legacy inline path; persisted drafts use the versioned Web/MCP path.
   review: {
     inlineComment: false,
+    persistedDrafts: true,
     reply: true,
     resolve: true,
     verdicts: ["approve", "request-changes", "comment"],
@@ -89,12 +93,28 @@ export const make = Effect.gen(function* () {
         ),
       );
     });
-  const mr = (input: Ref) =>
-    read(
+  const mr = Effect.fn("CodeupPullRequestProvider.mr")(function* (input: Ref) {
+    const value = yield* read(
       input,
       { operation: "GetChangeRequest", params: { localId: input.number } },
       Json.MergeRequest,
     );
+    const repository = value.detailUrl
+      ? null
+      : yield* api.getRepository(input.repository).pipe(Effect.mapError(mapError("repository")));
+    const url = value.detailUrl ? parseChangeRequestUrl(value.detailUrl) : null;
+    if (
+      value.localId !== input.number ||
+      (repository !== null && value.targetProjectId !== repository.id) ||
+      (value.detailUrl &&
+        (url === null ||
+          url.host !== input.host ||
+          url.repository !== input.repository.toLowerCase() ||
+          url.number !== input.number))
+    )
+      return yield* failure("identity", "Codeup returned another merge request or repository.");
+    return value;
+  });
   const patches = (input: Ref) =>
     read(
       input,
@@ -200,9 +220,18 @@ export const make = Effect.gen(function* () {
       }),
     );
   const comment = Effect.fn("CodeupPullRequestProvider.comment")(function* (
-    input: Ref & { readonly body: string; readonly threadId?: string },
+    input: Ref & {
+      readonly body: string;
+      readonly threadId?: string;
+      readonly expectedHeadSha?: string;
+    },
   ) {
     const versions = yield* patches(input);
+    if (input.expectedHeadSha !== undefined && input.expectedHeadSha !== versions.source.commitId)
+      return yield* failure(
+        "review",
+        "The merge request changed before the comment was posted. Refresh and review the current diff.",
+      );
     yield* write(input, {
       operation: "CreateChangeRequestComment",
       body: {
@@ -214,6 +243,106 @@ export const make = Effect.gen(function* () {
         ...(input.threadId ? { parent_comment_biz_id: input.threadId } : {}),
       },
     });
+  });
+
+  const revisionOf = (
+    versions: Effect.Success<ReturnType<typeof patches>>,
+  ): PullRequestReviewRevision => ({
+    baseSha: versions.base.commitId,
+    headSha: versions.source.commitId,
+    fromPatchSetId: versions.base.patchSetBizId,
+    toPatchSetId: versions.source.patchSetBizId,
+  });
+  const sameRevision = (a: PullRequestReviewRevision, b: PullRequestReviewRevision) =>
+    a.baseSha === b.baseSha &&
+    a.headSha === b.headSha &&
+    a.fromPatchSetId === b.fromPatchSetId &&
+    a.toPatchSetId === b.toPatchSetId;
+  const commentsOf = (input: Ref) =>
+    read(
+      input,
+      { operation: "ListMergeRequestComments", params: { localId: input.number } },
+      Json.Comments,
+    );
+  const draftSnapshot = Effect.fn("CodeupPullRequestProvider.draftSnapshot")(function* (
+    input: Ref,
+  ) {
+    yield* mr(input);
+    const viewer = yield* read(input, { operation: "GetUserByToken" }, Json.Viewer);
+    const all = yield* read(
+      input,
+      { operation: "ListChangeRequestPatchSets", params: { localId: input.number } },
+      Json.PatchSets,
+    );
+    const compared = yield* comparison(input);
+    const current = revisionOf(compared);
+    const comments = yield* commentsOf(input);
+    const viewerPermissions = yield* permissions(input);
+    const drafts: PullRequestPersistedDraft[] = [];
+    for (const c of comments) {
+      if (c.state !== "DRAFT" || c.is_deleted || c.author?.userId !== viewer.id) continue;
+      if (c.comment_type !== "INLINE_COMMENT") continue;
+      const from = all.find((p) => p.patchSetBizId === c.from_patchset_biz_id);
+      const to = all.find((p) => p.patchSetBizId === c.to_patchset_biz_id);
+      const revision =
+        from && to
+          ? {
+              baseSha: from.commitId,
+              headSha: to.commitId,
+              fromPatchSetId: from.patchSetBizId,
+              toPatchSetId: to.patchSetBizId,
+            }
+          : null;
+      const side =
+        c.related_patchset?.patchSetBizId &&
+        c.related_patchset.patchSetBizId === c.from_patchset_biz_id
+          ? "left"
+          : c.related_patchset?.patchSetBizId &&
+              c.related_patchset.patchSetBizId === c.to_patchset_biz_id
+            ? "right"
+            : null;
+      const stale =
+        !revision || !side || !c.filePath || !c.line_number || !sameRevision(revision, current);
+      const file = stale
+        ? undefined
+        : compared.compare.diffs.find(
+            (f) => (side === "left" ? f.oldPath : f.newPath) === c.filePath,
+          );
+      drafts.push({
+        id: c.comment_biz_id,
+        body: c.content,
+        author: Json.actor(c.author),
+        path: file?.newPath ?? c.filePath ?? null,
+        ...(file && file.oldPath !== file.newPath ? { oldPath: file.oldPath } : {}),
+        side,
+        line: c.line_number ?? null,
+        patchSetId: c.related_patchset?.patchSetBizId ?? null,
+        revision,
+        stale: Boolean(stale || !file),
+        canEdit: viewerPermissions.comment,
+        canDelete: viewerPermissions.comment,
+      });
+    }
+    return { viewer: viewer.id, drafts, revision: current };
+  });
+  const ownedDraft = Effect.fn("CodeupPullRequestProvider.ownedDraft")(function* (
+    input: Ref & { readonly draftCommentId: string },
+  ) {
+    const snapshot = yield* draftSnapshot(input);
+    const draft = snapshot.drafts.find((d) => d.id === input.draftCommentId);
+    if (!draft)
+      return yield* failure("draft", "This is not your unpublished draft in this merge request.");
+    return draft;
+  });
+  const assertRevision = Effect.fn("CodeupPullRequestProvider.assertRevision")(function* (
+    input: Ref,
+    expected: PullRequestReviewRevision,
+  ) {
+    if (!sameRevision(revisionOf(yield* patches(input)), expected))
+      return yield* failure(
+        "draft",
+        "The comparison changed. Review the current diff; old draft anchors cannot be reused.",
+      );
   });
 
   return {
@@ -394,7 +523,13 @@ export const make = Effect.gen(function* () {
       },
     ),
     getViewerPermissions: permissions,
-    getDiff: (input) => comparison(input).pipe(Effect.map(({ compare }) => Json.patch(compare))),
+    getDiff: (input) =>
+      comparison(input).pipe(
+        Effect.map((compared) => ({
+          ...Json.patch(compared.compare),
+          ...(input.commit ? {} : { revision: revisionOf(compared) }),
+        })),
+      ),
     getDiffFileContents: Effect.fn("CodeupPullRequestProvider.getDiffFileContents")(
       function* (input) {
         const { compare, source, base } = yield* comparison(input);
@@ -493,9 +628,21 @@ export const make = Effect.gen(function* () {
       ),
     runAction: Effect.fn("CodeupPullRequestProvider.runAction")(function* (input) {
       if (input.action === "close" || input.action === "reopen") {
+        const desired = input.action === "close" ? "closed" : "open";
+        if (Json.state((yield* mr(input)).status) === desired) return;
         yield* write(input, {
           operation: input.action === "close" ? "CloseChangeRequest" : "ReopenChangeRequest",
-        });
+        }).pipe(
+          Effect.catch((error) =>
+            mr(input).pipe(
+              Effect.matchEffect({
+                onFailure: () => Effect.fail(error),
+                onSuccess: (after) =>
+                  Json.state(after.status) === desired ? Effect.void : Effect.fail(error),
+              }),
+            ),
+          ),
+        );
         const after = yield* mr(input);
         if (Json.state(after.status) !== (input.action === "close" ? "closed" : "open"))
           return yield* failure(
@@ -510,6 +657,11 @@ export const make = Effect.gen(function* () {
             "Codeup merge requirements have not passed, or the conflict check is incomplete. Review the merge request on Codeup.",
           );
         const versions = yield* patches(input);
+        if (
+          input.expectedHeadSha !== undefined &&
+          input.expectedHeadSha !== versions.source.commitId
+        )
+          return yield* failure("merge", "The merge request head changed. Refresh before merging.");
         const currentChecks = yield* checks(input, versions);
         if (currentChecks.some((check) => check.required && check.status !== "success"))
           return yield* failure(
@@ -524,6 +676,19 @@ export const make = Effect.gen(function* () {
           return yield* failure(
             "merge",
             "The merge request changed while its checks were read. Refresh before merging.",
+          );
+        const finalRequest = yield* mr(input);
+        if (
+          finalRequest.targetBranch !== before.targetBranch ||
+          finalRequest.sourceBranch !== before.sourceBranch ||
+          finalRequest.sourceProjectId !== before.sourceProjectId ||
+          finalRequest.targetProjectId !== before.targetProjectId ||
+          finalRequest.allRequirementsPass !== true ||
+          finalRequest.conflictCheckStatus !== "NO_CONFLICT"
+        )
+          return yield* failure(
+            "merge",
+            "The merge request target or requirements changed. Refresh before merging.",
           );
         // No bypass flag: Codeup checks its own gates. Its merge API has no expected-head
         // parameter, so a preflight cannot promise atomic head fencing.
@@ -546,14 +711,35 @@ export const make = Effect.gen(function* () {
           );
       } else return yield* failure(input.action, "This action is not supported by Codeup.");
     }),
-    updateChangeRequest: (input) =>
-      write(input, {
-        operation: "UpdateChangeRequest",
-        body: {
-          ...(input.title !== undefined ? { title: input.title } : {}),
-          ...(input.body !== undefined ? { description: input.body } : {}),
-        },
-      }),
+    updateChangeRequest: Effect.fn("CodeupPullRequestProvider.updateChangeRequest")(
+      function* (input) {
+        const matches = (value: typeof Json.MergeRequest.Type) =>
+          (input.title === undefined || value.title === input.title) &&
+          (input.body === undefined || (value.description ?? "") === input.body);
+        if (matches(yield* mr(input))) return;
+        yield* write(input, {
+          operation: "UpdateChangeRequest",
+          body: {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.body !== undefined ? { description: input.body } : {}),
+          },
+        }).pipe(
+          Effect.catch((error) =>
+            mr(input).pipe(
+              Effect.matchEffect({
+                onFailure: () => Effect.fail(error),
+                onSuccess: (after) => (matches(after) ? Effect.void : Effect.fail(error)),
+              }),
+            ),
+          ),
+        );
+        if (!matches(yield* mr(input)))
+          return yield* failure(
+            "update",
+            "Codeup has not confirmed the requested fields. Refresh before retrying.",
+          );
+      },
+    ),
     comment,
     updateComment: (input) =>
       write(input, {
@@ -561,29 +747,181 @@ export const make = Effect.gen(function* () {
         params: { commentBizId: input.commentId },
         body: { content: input.body },
       }),
+    listReviewDrafts: draftSnapshot,
+    createReviewDraft: Effect.fn("CodeupPullRequestProvider.createReviewDraft")(function* (input) {
+      yield* mr(input);
+      const compared = yield* comparison(input);
+      if (!sameRevision(revisionOf(compared), input.expectedRevision))
+        return yield* failure("draft", "The comparison changed. Refresh before creating a draft.");
+      const file = compared.compare.diffs.find(
+        (f) =>
+          f.newPath === input.path &&
+          (f.oldPath === f.newPath
+            ? input.oldPath === undefined || input.oldPath === f.oldPath
+            : input.oldPath === f.oldPath),
+      );
+      if (!file || file.isBinary)
+        return yield* failure("draft", "This file is not in the current text diff.");
+      const pos = input.position;
+      const side = pos.kind === "deleted" ? "left" : pos.kind === "added" ? "right" : pos.side;
+      const line =
+        pos.kind === "deleted"
+          ? pos.oldLine
+          : pos.kind === "added"
+            ? pos.newLine
+            : pos.side === "left"
+              ? pos.oldLine
+              : pos.newLine;
+      let oldLine = 0,
+        newLine = 0,
+        inHunk = false,
+        found = false;
+      for (const row of (file.diff ?? "").split("\n")) {
+        const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(row);
+        if (hunk) {
+          oldLine = Number(hunk[1]);
+          newLine = Number(hunk[2]);
+          inHunk = true;
+          continue;
+        }
+        if (!inHunk) continue;
+        if (
+          (pos.kind === "deleted" && row.startsWith("-") && oldLine === pos.oldLine) ||
+          (pos.kind === "added" && row.startsWith("+") && newLine === pos.newLine) ||
+          (pos.kind === "context" &&
+            row.startsWith(" ") &&
+            oldLine === pos.oldLine &&
+            newLine === pos.newLine)
+        )
+          found = true;
+        if (row.startsWith(" ") || row.startsWith("-")) oldLine++;
+        if (row.startsWith(" ") || row.startsWith("+")) newLine++;
+      }
+      if (!found) return yield* failure("draft", "This line is not in the reviewed diff.");
+      yield* assertRevision(input, input.expectedRevision);
+      const created = yield* read(
+        input,
+        {
+          operation: "CreateChangeRequestComment",
+          params: { localId: input.number },
+          body: {
+            content: input.body,
+            comment_type: "INLINE_COMMENT",
+            draft: true,
+            resolved: false,
+            file_path: side === "left" ? file.oldPath : file.newPath,
+            line_number: line,
+            patchset_biz_id:
+              side === "left"
+                ? input.expectedRevision.fromPatchSetId
+                : input.expectedRevision.toPatchSetId,
+            from_patchset_biz_id: input.expectedRevision.fromPatchSetId,
+            to_patchset_biz_id: input.expectedRevision.toPatchSetId,
+          },
+        },
+        Json.Comment,
+      );
+      return yield* ownedDraft({ ...input, draftCommentId: created.comment_biz_id });
+    }),
+    updateReviewDraft: Effect.fn("CodeupPullRequestProvider.updateReviewDraft")(function* (input) {
+      yield* ownedDraft(input);
+      yield* write(input, {
+        operation: "UpdateChangeRequestComment",
+        params: { commentBizId: input.draftCommentId },
+        body: { content: input.body },
+      });
+      const after = yield* ownedDraft(input);
+      if (after.body !== input.body)
+        return yield* failure(
+          "draft",
+          "Codeup has not confirmed the draft edit. Refresh before retrying.",
+        );
+      return after;
+    }),
+    deleteReviewDraft: Effect.fn("CodeupPullRequestProvider.deleteReviewDraft")(function* (input) {
+      yield* ownedDraft(input);
+      yield* write(input, {
+        operation: "DeleteChangeRequestComment",
+        params: { commentBizId: input.draftCommentId },
+      });
+      if ((yield* draftSnapshot(input)).drafts.some((d) => d.id === input.draftCommentId))
+        return yield* failure(
+          "draft",
+          "Codeup has not confirmed deletion. Refresh before retrying.",
+        );
+    }),
     submitReview: Effect.fn("CodeupPullRequestProvider.submitReview")(function* (input) {
+      if (input.draftCommentIds !== undefined) {
+        if (
+          input.comments.length ||
+          !input.expectedRevision ||
+          input.expectedHeadSha !== input.expectedRevision.headSha
+        )
+          return yield* failure(
+            "review",
+            "Platform draft IDs require their complete reviewed revision and cannot be mixed with local comments.",
+          );
+        const snapshot = yield* draftSnapshot(input);
+        const selected = input.draftCommentIds.map((id) =>
+          snapshot.drafts.find((d) => d.id === id),
+        );
+        if (
+          !selected.length ||
+          selected.some(
+            (d) =>
+              !d || d.stale || !d.revision || !sameRevision(d.revision, input.expectedRevision!),
+          )
+        )
+          return yield* failure(
+            "review",
+            "A selected draft is missing, belongs to another reviewer, or is stale. Review the current diff.",
+          );
+        yield* assertRevision(input, input.expectedRevision);
+        yield* write(input, {
+          operation: "ReviewChangeRequest",
+          body: {
+            submitDraftCommentIds: [...input.draftCommentIds],
+            ...(input.verdict === "comment"
+              ? {}
+              : { reviewOpinion: input.verdict === "approve" ? "PASS" : "NOT_PASS" }),
+            ...(input.body.trim() ? { reviewComment: input.body } : {}),
+          },
+        });
+        const after = yield* commentsOf(input);
+        if (
+          input.draftCommentIds.some(
+            (id) =>
+              !after.some((c) => c.comment_biz_id === id && c.state === "OPENED" && !c.is_deleted),
+          )
+        )
+          return yield* failure(
+            "review",
+            "Codeup has not confirmed every submitted draft. Refresh before retrying.",
+          );
+        yield* assertRevision(input, input.expectedRevision);
+        return;
+      }
       if (input.comments.length)
         return yield* failure(
           "review",
           "Inline review drafts require a patch-set identity and are not supported in this build.",
         );
-      if (input.verdict === "comment") {
-        if (input.body.trim()) yield* comment(input);
-        return;
-      }
       const versions = yield* patches(input);
       if (!input.expectedHeadSha || input.expectedHeadSha !== versions.source.commitId)
         return yield* failure(
           "review",
           "The merge request changed since it was displayed. Refresh and review the current diff before submitting.",
         );
-      yield* write(input, {
-        operation: "ReviewChangeRequest",
-        body: {
-          reviewOpinion: input.verdict === "approve" ? "PASS" : "NOT_PASS",
-          reviewComment: input.body,
-        },
-      });
+      if (input.verdict === "comment") {
+        if (input.body.trim()) yield* comment(input);
+      } else
+        yield* write(input, {
+          operation: "ReviewChangeRequest",
+          body: {
+            reviewOpinion: input.verdict === "approve" ? "PASS" : "NOT_PASS",
+            reviewComment: input.body,
+          },
+        });
       const after = yield* patches(input);
       if (after.source.commitId !== versions.source.commitId)
         return yield* failure(
@@ -594,14 +932,7 @@ export const make = Effect.gen(function* () {
     listReviewerCandidates: Effect.fn("CodeupPullRequestProvider.listReviewerCandidates")(
       function* (input) {
         const [value, members] = yield* Effect.all(
-          [
-            mr(input),
-            read(
-              input,
-              { operation: "ListRepositoryMembers", query: { page: 1, perPage: 100 } },
-              Json.Members,
-            ),
-          ],
+          [mr(input), read(input, { operation: "ListRepositoryMembers" }, Json.Members)],
           { concurrency: 2 },
         );
         return {
@@ -615,7 +946,7 @@ export const make = Effect.gen(function* () {
               avatarUrl: u.avatarUrl ?? null,
               isRequested: value.reviewers.some((r) => r.userId === u.userId),
             })),
-          truncated: members.length >= 100,
+          truncated: false,
         };
       },
     ),

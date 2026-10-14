@@ -82,6 +82,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
   const mixedSubmodules = useScopedSettingsMixed(["worktreeSubmodules"]);
+  const mixedWorkItems = useScopedSettingsMixed(["enableAgentWorkItemsAccess"]);
   const mixedBrowser = useScopedSettingsMixed(["enableAgentBrowserAccess"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
   const mixedAgentCredits = useScopedSettingsMixed(["removeAgentCreditsOnMerge"]);
@@ -527,6 +528,42 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                 mixed={mixedBrowser}
                 checked={mixedBrowser ? false : settings.enableAgentBrowserAccess}
                 onCheckedChange={(enabled) => updateSettings({ enableAgentBrowserAccess: enabled })}
+              />
+            }
+          />
+          <SettingsRow
+            serverScoped
+            settingKeys={["enableAgentWorkItemsAccess"]}
+            mixed={mixedWorkItems}
+            id={searchableSetting("agent-work-items-access").id}
+            title="Agent work item access"
+            description={
+              isProjectScope
+                ? "Allow agents in this project to read and change ProjeX work items. Enabling applies at the next agent session start; disabling blocks further calls."
+                : "Allow agents to read and change ProjeX work items. Off by default. Projects can override it."
+            }
+            resetAction={
+              settings.enableAgentWorkItemsAccess !==
+              DEFAULT_SERVER_SETTINGS.enableAgentWorkItemsAccess ? (
+                <SettingResetButton
+                  label="default work item access"
+                  onClick={() =>
+                    updateSettings({
+                      enableAgentWorkItemsAccess:
+                        DEFAULT_SERVER_SETTINGS.enableAgentWorkItemsAccess,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                aria-label="Agent work item access"
+                mixed={mixedWorkItems}
+                checked={mixedWorkItems ? false : settings.enableAgentWorkItemsAccess}
+                onCheckedChange={(enabled) =>
+                  updateSettings({ enableAgentWorkItemsAccess: enabled })
+                }
               />
             }
           />

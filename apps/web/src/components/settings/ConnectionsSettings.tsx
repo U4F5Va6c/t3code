@@ -68,6 +68,7 @@ import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls
 import {
   applyWslEnableSelection,
   canRevokeOtherClients,
+  getReleaseCheckStatus,
   isQrShareableEndpoint,
   isWslSettingsRowVisible,
   selectQrEndpointOption,
@@ -1547,18 +1548,21 @@ function SavedBackendListRow({
       );
     },
   });
-  const codeupVersion = useCodeupReleaseVersion(
+  const codeupRelease = useCodeupReleaseVersion(
     isCodeupPreviewVersion(environment.serverConfig?.environment.serverVersion),
   );
   const versionMismatch = resolveServerConfigVersionMismatch(
     environment.serverConfig,
-    codeupVersion,
+    codeupRelease.data,
   );
   const serverUpdateState = useAtomValue(serverEnvironment.updateStateAtom(environmentId));
   const resumingServerUpdate =
     serverUpdateState.status === "running" && serverUpdateState.stage === "resuming";
   const status = savedBackendStatus(environment);
   const serverVersion = environment.serverConfig?.environment.serverVersion ?? null;
+  const releaseCheckStatus = isCodeupPreviewVersion(serverVersion ?? undefined)
+    ? getReleaseCheckStatus(codeupRelease)
+    : "confirmed";
   // A saved T3 Connect machine this device has never reached (unsupported,
   // or not yet connected) still has a descriptor from relay discovery, so
   // it can wear its detected glyph instead of the generic server. Discovery
@@ -1695,6 +1699,19 @@ function SavedBackendListRow({
         serverUpdateState.status !== "idle" ? (
           <div className="mt-1 max-w-md">
             <ServerUpdateProgress state={serverUpdateState} />
+          </div>
+        ) : enabled && isConnected && !versionMismatch && releaseCheckStatus !== "confirmed" ? (
+          <div className="mt-1 flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {releaseCheckStatus === "checking"
+                ? "Checking for updates…"
+                : "Could not confirm the latest release."}
+            </span>
+            {releaseCheckStatus === "unavailable" ? (
+              <Button variant="outline" size="sm" onClick={codeupRelease.refresh}>
+                Check again
+              </Button>
+            ) : null}
           </div>
         ) : null
       }
@@ -2043,7 +2060,7 @@ export function ConnectionsSettings() {
   const desktopBridge = window.desktopBridge;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { environments } = useEnvironments();
-  const codeupVersion = useCodeupReleaseVersion(
+  const codeupRelease = useCodeupReleaseVersion(
     environments.some((environment) =>
       isCodeupPreviewVersion(environment.serverConfig?.environment.serverVersion),
     ),
@@ -2104,7 +2121,7 @@ export function ConnectionsSettings() {
       savedServerUpdateStates.flatMap(({ environment, updateStatus }): ServerUpdateTarget[] => {
         const mismatch = resolveServerConfigVersionMismatch(
           environment.serverConfig,
-          codeupVersion,
+          codeupRelease.data,
         );
         const selfUpdate = resolveServerSelfUpdateCapability(environment.serverConfig);
         const desktopAppUpdate = supportsDesktopAppUpdate(environment.serverConfig);
@@ -2134,7 +2151,7 @@ export function ConnectionsSettings() {
           },
         ];
       }),
-    [savedServerUpdateStates, codeupVersion],
+    [savedServerUpdateStates, codeupRelease.data],
   );
   // Switched-off machines never receive threads, so they stay out of the
   // load balancing and GitHub sharing lists. The WSL backend has no row in
@@ -2239,8 +2256,13 @@ export function ConnectionsSettings() {
   const primaryServerConfig = primaryEnvironment?.serverConfig ?? null;
   const primaryVersionMismatch = resolveServerConfigVersionMismatch(
     primaryServerConfig,
-    codeupVersion,
+    codeupRelease.data,
   );
+  const primaryReleaseCheckStatus = isCodeupPreviewVersion(
+    primaryServerConfig?.environment.serverVersion,
+  )
+    ? getReleaseCheckStatus(codeupRelease)
+    : "confirmed";
   const primaryServerUpdateState = useAtomValue(
     serverEnvironment.updateStateAtom(primaryEnvironmentId),
   );
@@ -3712,7 +3734,20 @@ export function ConnectionsSettings() {
                       }
                     />
                   ) : primaryServerUpdateState.status === "idle" && primaryServerConfig ? (
-                    <span className="text-xs text-muted-foreground">Up to date</span>
+                    primaryReleaseCheckStatus === "checking" ? (
+                      <span className="text-xs text-muted-foreground">Checking for updates…</span>
+                    ) : primaryReleaseCheckStatus === "unavailable" ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          Could not confirm the latest release.
+                        </span>
+                        <Button variant="outline" size="sm" onClick={codeupRelease.refresh}>
+                          Check again
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Up to date</span>
+                    )
                   ) : undefined
                 }
               />

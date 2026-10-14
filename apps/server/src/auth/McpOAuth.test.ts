@@ -1,6 +1,8 @@
+import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthAdministrativeScopes,
+  EnvironmentId,
   type AuthCreatePairingCredentialInput,
   EnvironmentHttpApi,
 } from "@t3tools/contracts";
@@ -298,7 +300,32 @@ it.live("signs in with a pairing code and issues a token only /mcp accepts", () 
           at("/mcp", { headers: { authorization: `Bearer ${token.access_token}` } }),
         ),
       );
-      expect(client).toMatchObject({ label: "Claude Code", access: "auto" });
+      expect(client).toMatchObject({
+        label: "Claude Code",
+        access: "auto",
+        scopes: ["orchestration:read", "orchestration:operate"],
+      });
+      const authenticator = yield* McpHttpServer.McpClientAuthenticator.pipe(
+        Effect.provide(
+          McpOAuth.layerMcpClientAuthenticator.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(EnvironmentAuth.EnvironmentAuth, auth),
+                Layer.mock(ServerEnvironment.ServerEnvironment)({
+                  getEnvironmentId: Effect.succeed(EnvironmentId.make("test-env")),
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      const restored = yield* authenticator.authenticate(
+        HttpServerRequest.fromWeb(
+          at("/mcp", { headers: { authorization: `Bearer ${token.access_token}` } }),
+        ),
+      );
+      expect(restored?.client?.scopes).toEqual(client.scopes);
+      expect(restored?.client?.scopes).not.toContain("source-control:write");
 
       // The same token is refused by the rest of the environment.
       const session = yield* handler(
@@ -581,3 +608,23 @@ it("matches loopback redirects on everything but the port, and https redirects e
   expect(matches("https://bot.example/cb", "https://bot.example/cb?x=1")).toBe(false);
   expect(matches("https://bot.example/cb", "https://evil.example/cb")).toBe(false);
 });
+
+it.live("rejects refresh-token exchanges instead of expanding an existing MCP grant", () =>
+  withRoutes((handler) =>
+    Effect.gen(function* () {
+      const response = yield* handler(
+        at(
+          "/oauth/mcp/token",
+          form({
+            grant_type: "refresh_token",
+            refresh_token: "old-grant",
+            client_id: "old-client",
+          }),
+        ),
+      );
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      const body = yield* json<Record<string, unknown>>(response);
+      expect(body.access_token).toBeUndefined();
+    }),
+  ),
+);

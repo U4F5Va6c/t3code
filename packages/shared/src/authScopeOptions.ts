@@ -14,6 +14,7 @@ import {
   AuthRelayWriteScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
+  AuthWorkItemsWriteScope,
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
 } from "@t3tools/contracts";
@@ -23,6 +24,11 @@ export const AUTH_SCOPE_OPTIONS: ReadonlyArray<{
   readonly title: string;
   readonly description: string;
 }> = [
+  {
+    scope: AuthWorkItemsWriteScope,
+    title: "Change work items",
+    description: "Create and update ProjeX work items, states, and relationships.",
+  },
   {
     scope: AuthOrchestrationReadScope,
     title: "View environment",

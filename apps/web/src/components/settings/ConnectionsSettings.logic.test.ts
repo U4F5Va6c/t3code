@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   applyWslEnableSelection,
   canRevokeOtherClients,
+  getReleaseCheckStatus,
   isQrShareableEndpoint,
   isWslSettingsRowVisible,
   selectQrEndpointOption,
@@ -230,5 +231,43 @@ describe("canRevokeOtherClients", () => {
     expect(canRevokeOtherClients([])).toBe(false);
     expect(canRevokeOtherClients([{ current: true }])).toBe(false);
     expect(canRevokeOtherClients([{ current: true }, { current: false }])).toBe(true);
+  });
+});
+
+describe("getReleaseCheckStatus", () => {
+  it.each([
+    { label: "pending", data: null, isPending: true, isSuccess: false, expected: "checking" },
+    { label: "failure", data: null, isPending: false, isSuccess: false, expected: "unavailable" },
+    {
+      label: "failure with stale data",
+      data: "1.0.0",
+      isPending: false,
+      isSuccess: false,
+      expected: "unavailable",
+    },
+    {
+      label: "no installable release",
+      data: null,
+      isPending: false,
+      isSuccess: true,
+      expected: "unavailable",
+    },
+    {
+      label: "current release",
+      data: "1.0.0",
+      isPending: false,
+      isSuccess: true,
+      expected: "confirmed",
+    },
+    {
+      label: "available release",
+      data: "1.0.1",
+      isPending: false,
+      isSuccess: true,
+      expected: "confirmed",
+    },
+    { label: "refreshing", data: "1.0.0", isPending: true, isSuccess: true, expected: "checking" },
+  ])("handles $label", ({ expected, ...query }) => {
+    expect(getReleaseCheckStatus(query)).toBe(expected);
   });
 });

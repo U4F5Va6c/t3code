@@ -309,3 +309,67 @@ it.effect("rejects protected unary and streamed RPCs outside a guarded command",
     expect(writes).toBe(0);
   }),
 );
+
+it.effect(
+  "authorizes draft mutations against the destination environment's source-control grant",
+  () =>
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      registry.set(
+        sessions(other),
+        AsyncResult.success({
+          ...grant(false),
+          scopes: [AuthSourceControlWriteScope],
+          permissions: [AuthSourceControlWriteScope],
+        }),
+      );
+      registry.set(sessions(env), AsyncResult.success(grant(false)));
+      for (const tag of [
+        WS_METHODS.pullRequestsCreateReviewDraft,
+        WS_METHODS.pullRequestsUpdateReviewDraft,
+        WS_METHODS.pullRequestsDeleteReviewDraft,
+      ]) {
+        const permission = createCommandPermissions(runtime, tag);
+        yield* permission.authorize(registry, env).pipe(Effect.flip);
+        yield* permission.authorize(registry, other);
+      }
+    }),
+);
+it.effect("requires a separate destination work-items grant for every work-item mutation", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      for (const method of [
+        WS_METHODS.workItemsCreate,
+        WS_METHODS.workItemsRecover,
+        WS_METHODS.workItemsUpdate,
+        WS_METHODS.workItemsRelate,
+      ]) {
+        const permission = createCommandPermissions(runtime, method);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(true),
+            scopes: [AuthSourceControlWriteScope],
+            permissions: [AuthSourceControlWriteScope],
+          }),
+        );
+        expect(registry.get(permission.permissionAtom(env))).toBe(false);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(true),
+            scopes: ["work-items:write"],
+            permissions: ["work-items:write"],
+          }),
+        );
+        expect(registry.get(permission.permissionAtom(env))).toBe(true);
+        yield* permission.authorize(registry, env);
+        registry.set(sessions(other), AsyncResult.success(grant(false)));
+        expect((yield* permission.authorize(registry, other).pipe(Effect.result))._tag).toBe(
+          "Failure",
+        );
+      }
+    }),
+  ),
+);

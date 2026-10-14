@@ -28,8 +28,8 @@ import {
  * this app's own download and install when given.
  */
 export function useUpdateEverything(localUpdateVersion: string | null) {
-  const codeupVersion = useCodeupReleaseVersion(isCodeupPreviewVersion(APP_VERSION));
-  const targetVersion = localUpdateVersion ?? codeupVersion ?? APP_VERSION;
+  const codeupRelease = useCodeupReleaseVersion(isCodeupPreviewVersion(APP_VERSION));
+  const targetVersion = localUpdateVersion ?? codeupRelease.data ?? APP_VERSION;
   const { environments } = useEnvironments();
   const machinesAtom = useMemo(
     () =>

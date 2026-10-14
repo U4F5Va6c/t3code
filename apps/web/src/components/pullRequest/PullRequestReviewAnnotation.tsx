@@ -82,10 +82,15 @@ export function getReviewPositionAnchor(position: PullRequestReviewPosition): {
 export function PendingReviewCommentCard({
   comment,
   onRemove,
+  onEdit,
 }: {
   comment: PendingReviewComment;
   onRemove: () => void;
+  onEdit?: (body: string) => Promise<boolean>;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [body, setBody] = useState(comment.body);
+  const [saving, setSaving] = useState(false);
   return (
     <div
       className={cn(CARD_CLASS, "border-dashed")}
@@ -94,18 +99,62 @@ export function PendingReviewCommentCard({
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <MessageSquareIcon className="size-3.5" />
-        <span>Pending — sent when you submit the review</span>
+        <span>
+          {comment.stale
+            ? "Outdated draft — edit or discard; review the current diff before creating a replacement"
+            : "Pending — sent when you submit the review"}
+        </span>
         <Button
           size="icon-xs"
           variant="ghost"
           className="ml-auto"
           aria-label="Discard this comment"
+          disabled={saving || comment.canDelete === false}
           onClick={onRemove}
         >
           <Trash2Icon className="size-3.5" />
         </Button>
       </div>
-      <p className="mt-2 whitespace-pre-wrap leading-relaxed">{comment.body}</p>
+      {editing ? (
+        <div className="mt-2 space-y-2">
+          <Textarea
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            aria-label="Edit private draft"
+          />
+          <Button
+            size="xs"
+            disabled={saving || !body.trim()}
+            onClick={async () => {
+              setSaving(true);
+              const saved = await onEdit?.(body);
+              setSaving(false);
+              if (saved) setEditing(false);
+            }}
+          >
+            Save draft
+          </Button>
+          <Button size="xs" variant="ghost" disabled={saving} onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <>
+          <p className="mt-2 whitespace-pre-wrap leading-relaxed">{comment.body}</p>
+          {onEdit && comment.canEdit !== false ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => {
+                setBody(comment.body);
+                setEditing(true);
+              }}
+            >
+              Edit draft
+            </Button>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

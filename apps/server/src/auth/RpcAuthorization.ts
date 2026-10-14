@@ -44,6 +44,14 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  */
 export const RPC_REQUIRED_SCOPES = {
   ...CLIENT_GUARDED_RPC_SCOPES,
+  [WS_METHODS.workItemsConnections]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsProjects]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsMetadata]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsSearch]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsGet]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsReceipt]: AuthOrchestrationReadScope,
+  [WS_METHODS.workItemsReady]: AuthOrchestrationReadScope,
+
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,
@@ -133,6 +141,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsChecks]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsActivity]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsReviewGuide]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsListReviewDrafts]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsThreadComments]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDiffFileContents]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsFilesViewed]: AuthOrchestrationReadScope,
@@ -145,6 +154,8 @@ export const RPC_REQUIRED_SCOPES = {
   // write like every other one.
   [WS_METHODS.pullRequestsReviewerCandidates]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsLabelCandidates]: AuthOrchestrationReadScope,
+  [WS_METHODS.sourceControlListRepositories]: AuthOrchestrationReadScope,
+  [WS_METHODS.sourceControlListBranches]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlLookupRepository]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeProjectClones]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsListEntries]: AuthFilesystemReadScope,

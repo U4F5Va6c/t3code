@@ -13,9 +13,11 @@ Codeup 原生适配的上游基线记录在 [codeup-upstream.json](../../.github
 - `main` 保持上游主线，不放定制提交；`codeup-integration` 是 Fork 默认分支和长期集成分支。
 - 功能分支从 `codeup-integration` 创建。Codeup Provider、ProjeX 与发布分别保持清楚的提交边界。
 
-`Codeup Nightly Sync` 每 6 小时检查官方**已发布的 Nightly tag**，也支持 Actions 手动触发和 dry run。始终复用 `sync/upstream-nightly` 的一个 PR；数天未合并时，新 Nightly 更新同一 PR 并重新检查，无需逐个合并中间版本。冲突会保留原远程分支，在 PR（首次同步则 #15）报告，并上传 patch；不会强推。默认人工合并。若选择自动合并，设置 Actions variable `CODEUP_AUTO_MERGE=true`；同步 CI 成功后，工作流通过受保护的合并 API 合入确切 SHA，再显式触发集成分支发布。它仍受必需检查及评审保护约束；未满足门槛会等待下次检查。
+`Codeup Nightly Sync` 每 6 小时检查官方**已发布的 Nightly tag**，也支持 Actions 手动触发和 dry run。始终复用 `sync/upstream-nightly` 的一个 PR；数天未合并时，新 Nightly 更新同一 PR 并重新检查，无需逐个合并中间版本。冲突会保留原远程分支，在 PR（首次同步则 #15）报告，并上传 patch；不会强推。默认人工合并。若选择自动合并，设置 Actions variable `CODEUP_AUTO_MERGE=true`；同步 CI 成功后，工作流通过受保护的合并 API 合入确切 SHA，由集成分支的 push 事件触发发布。它仍受必需检查及评审保护约束；未满足门槛会等待下次检查。
 
-定时工作流必须已合入默认分支。仓库 Actions 设置需允许创建 PR，默认 token 保持只读，写权限仅授予同步及发布 job。`GITHUB_TOKEN` 创建或更新 PR 会触发待批准的 Codeup CI；在 PR 页面选择 **Approve workflows to run** 后继续，不再额外 dispatch 一轮检查。自动合并只接受当前 PR head 的 PR 事件 CI 成功；合并后的 token push 仍不会触发工作流，因此保留集成分支的显式发布 dispatch。新增上游工作流仍须保持禁用。
+定时工作流必须已合入默认分支。同步任务使用仓库 Actions secret `CODEUP_SYNC_TOKEN`：创建只允许访问本 Fork 的 fine-grained PAT，授予 **Contents、Workflows、Pull requests、Issues** 读写权限及 **Actions** 读取权限；配置有效期并在过期前替换 secret。Git 推送及 GitHub API 均使用该凭据。默认 `GITHUB_TOKEN` 无权同步 `.github/workflows/` 的变更，`actions: write` 不能替代 Workflows 权限；缺少 secret 时正常同步会立即报错，dry run 仍可只读检查。
+
+专用凭据创建或更新 PR 后正常触发 Codeup CI，自动合并只接受当前 PR head 的 PR 事件 CI 成功；合并后由 push 事件构建和发布，不再额外 dispatch 一轮构建。失败发布可从 Codeup CI 重跑失败任务。默认 `GITHUB_TOKEN` 保持只读，发布 job 单独授予 contents 写权限。新增上游工作流仍须保持禁用。
 
 人工同步先确保工作区干净，记录当前 Fork 提交，确认本次 Nightly tag，再执行：
 
@@ -34,6 +36,8 @@ git merge --no-ff <official-nightly-tag>
 `YYYYMMDD` 换成本次日期，`<official-nightly-tag>` 换成已确认的官方 Nightly tag；分支已存在时选新名称。第一次发布集成分支前不执行其 `git pull`。发生冲突时逐项处理；放弃本轮同步用 `git merge --abort`。不要用 `reset --hard` 或强推覆盖共享分支。
 
 人工同步还须更新 `.github/codeup-upstream.json` 的 tag、SHA 与发布时间。同步分支完成相关测试、类型检查和手动验收后，再通过 Fork 内部 PR 以 Merge Commit 方式合入 `codeup-integration`，不 Squash。该分支受保护：必须经 PR 且 Codeup CI 通过，管理员同样不能直接推送或强推。合入后运行 `gh api repos/U4F5Va6c/t3code/actions/workflows --paginate -q '.workflows[]|select(.state=="active")|.path'`，除显式维护的 Fork 工作流外，新增上游工作流立即禁用。PR 目标不要误选上游仓库。只有明确要贡献上游时才另开上游 PR。
+
+Fork 自有数据库迁移放在 `CodeupMigrations/`，使用独立的 `codeup_sql_migrations` 记录表；不要占用上游 `Migrations.ts` 的编号。旧版将 `WorkItemCreationReceipts` 记为上游编号 62，升级时会在事务中转移该记录并保留原表及数据，释放编号供上游使用。
 
 ## 独立 Source Control 的边界
 
@@ -96,8 +100,8 @@ Fork 只运行 `codeup-ci.yml` 与 `codeup-sync.yml`。`codeup-integration` 的 
 因此 Mac 客户端连接 Linux environment 时无需在 Mac 重复配置公司 PAT。
 本机 Mac 需要能从应用进程找到凭据入口，见 [Codeup 认证](../user/source-control.md#codeup)。
 用专用测试仓库验收 MR 列表、详情、diff、评论与线程徽标，合并操作也只在测试 MR 上进行。
-本期复用 T3 现有的 MCP 关联、预览与监控链路；不新增 MR CRUD/评审专用 MCP 工具，
-这些平台操作可由客户端执行，agent 仍可使用本机云效 CLI/Skill。
+MR 创建、管理、评审及平台草稿通过原生 T3 MCP 与 Web/桌面共用服务和权限检查。
+目标 environment 必须具备对应平台凭据；Agent 也可使用该环境的云效 CLI/Skill。
 卸载时退出预览应用，再按需移除它的两个独立数据目录；保留原版目录。
 
 ## 暂缓：在自己的 iPhone 安装

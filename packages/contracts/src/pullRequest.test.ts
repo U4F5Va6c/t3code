@@ -4,6 +4,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   PullRequestActionInput,
+  PullRequestDraftCreateInput,
+  PullRequestPersistedDraft,
   PullRequestCapabilities,
   PullRequestFilesViewedResult,
   PullRequestListInput,
@@ -13,6 +15,9 @@ import {
   pullRequestHostOf,
   resolvePullRequestAuthorFilter,
 } from "./pullRequest.ts";
+
+const isDraftCreate = Schema.is(PullRequestDraftCreateInput);
+const isPersistedDraft = Schema.is(PullRequestPersistedDraft);
 
 const decodeListResult = Schema.decodeUnknownSync(PullRequestListResult);
 const decodeListInput = Schema.decodeUnknownSync(PullRequestListInput);
@@ -342,4 +347,33 @@ describe("naming the file a tick belongs to", () => {
       }),
     ).toThrow();
   });
+});
+
+it("requires the complete comparison when creating a persisted draft and preserves unknown anchors", () => {
+  expect(
+    isDraftCreate({
+      projectId: "project",
+      repository: "org/repo",
+      number: 1,
+      path: "file",
+      body: "draft",
+      position: { kind: "added", newLine: 1 },
+      expectedRevision: { headSha: "head" },
+    }),
+  ).toBe(false);
+  expect(
+    isPersistedDraft({
+      id: "draft",
+      body: "Keep this",
+      author: null,
+      path: null,
+      side: null,
+      line: null,
+      patchSetId: null,
+      revision: null,
+      stale: true,
+      canEdit: true,
+      canDelete: true,
+    }),
+  ).toBe(true);
 });

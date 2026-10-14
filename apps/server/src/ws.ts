@@ -1,3 +1,4 @@
+import * as WorkItemsService from "./workItems/WorkItemsService.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -200,8 +201,6 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
-import { refreshPushedPullRequests } from "./git/refreshPushedPullRequests.ts";
-import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
@@ -549,6 +548,72 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
 const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
+
+// Keep handler service inference bounded while serving the unchanged full protocol group.
+const ServerCoreWsRpcGroup = ServerWsRpcGroup.omit(
+  WS_METHODS.workItemsConnections,
+  WS_METHODS.workItemsProjects,
+  WS_METHODS.workItemsMetadata,
+  WS_METHODS.workItemsSearch,
+  WS_METHODS.workItemsGet,
+  WS_METHODS.workItemsCreate,
+  WS_METHODS.workItemsReceipt,
+  WS_METHODS.workItemsRecover,
+  WS_METHODS.workItemsUpdate,
+  WS_METHODS.workItemsRelate,
+  WS_METHODS.workItemsReady,
+);
+
+export const layerWorkItemsRpc = Layer.mergeAll(
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsConnections,
+    Effect.map(
+      WorkItemsService.WorkItemsService,
+      (service) => (input) => service.connections(input),
+    ),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsProjects,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.projects(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsMetadata,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.metadata(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsSearch,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.search(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsGet,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.get(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsCreate,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.create(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsReceipt,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.receipt(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsRecover,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.recover(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsUpdate,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.update(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsRelate,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.relate(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsReady,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.ready(input)),
+  ),
+);
+
 // When a resuming client's cursor is more than this many events behind the
 // current head, skip the per-event catch-up replay and send a fresh shell
 // snapshot instead. Replaying each intervening event costs a shell refetch;
@@ -1204,7 +1269,7 @@ const layerWsRpc = (
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
-  ServerWsRpcGroup.toLayer(
+  ServerCoreWsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
@@ -1249,11 +1314,6 @@ const layerWsRpc = (
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
       const orchestrationEngine = yield* Orchestrator.OrchestratorV2;
       const crypto = yield* Crypto.Crypto;
-      const serverCommandId = (tag: string) =>
-        crypto.randomUUIDv4.pipe(
-          Effect.orDie,
-          Effect.map((id) => CommandId.make(`server:${tag}:${id}`)),
-        );
       const resolvePullRequestSyncKey = (reference: PullRequestRef) =>
         reference.host !== undefined && reference.repository.includes("/")
           ? Effect.succeed(pullRequestSyncKey(reference))
@@ -1832,7 +1892,7 @@ const layerWsRpc = (
         return result;
       });
 
-      const handlers = ServerWsRpcGroup.of({
+      const handlers = ServerCoreWsRpcGroup.of({
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -2543,6 +2603,14 @@ const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.comment(input)),
         [WS_METHODS.pullRequestsUpdateComment]: (input) =>
           withPullRequestViewer(input, pullRequests.updateComment(input)),
+        [WS_METHODS.pullRequestsListReviewDrafts]: (input) =>
+          withPullRequestViewer(input, pullRequests.listReviewDrafts(input)),
+        [WS_METHODS.pullRequestsCreateReviewDraft]: (input) =>
+          withPullRequestViewer(input, pullRequests.createReviewDraft(input)),
+        [WS_METHODS.pullRequestsUpdateReviewDraft]: (input) =>
+          withPullRequestViewer(input, pullRequests.updateReviewDraft(input)),
+        [WS_METHODS.pullRequestsDeleteReviewDraft]: (input) =>
+          withPullRequestViewer(input, pullRequests.deleteReviewDraft(input)),
         [WS_METHODS.pullRequestsSubmitReview]: (input) =>
           withPullRequestViewer(input, pullRequests.submitReview(input)),
         [WS_METHODS.pullRequestsReplyToThread]: (input) =>
@@ -2575,6 +2643,10 @@ const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.labelCandidates(input)),
         [WS_METHODS.pullRequestsSetLabels]: (input) =>
           withPullRequestViewer(input, pullRequests.setLabels(input)),
+        [WS_METHODS.sourceControlListRepositories]: (input) =>
+          sourceControlRepositories.listRepositories(input),
+        [WS_METHODS.sourceControlListBranches]: (input) =>
+          sourceControlRepositories.listBranches(input),
         [WS_METHODS.sourceControlLookupRepository]: (input) =>
           sourceControlRepositories.lookupRepository(input),
         [WS_METHODS.sourceControlCloneRepository]: (input) =>
@@ -2837,40 +2909,25 @@ const layerWsRpc = (
         [WS_METHODS.gitRunStackedAction]: (input) =>
           Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
             gitWorkflow
-              .runStackedAction(input, {
+              .runStackedActionAndRefresh(input, {
                 actionId: input.actionId,
                 progressReporter: {
                   publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
                 },
               })
               .pipe(
+                Effect.provideService(Crypto.Crypto, crypto),
+                Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
+                Effect.provideService(ProjectService.ProjectService, projectService),
+                Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
+                Effect.provideService(PullRequestService.PullRequestService, pullRequests),
+                Effect.provideService(
+                  VcsStatusBroadcaster.VcsStatusBroadcaster,
+                  vcsStatusBroadcaster,
+                ),
                 Effect.matchCauseEffect({
                   onFailure: (cause) => Queue.failCause(queue, cause),
-                  onSuccess: (result) =>
-                    (input.threadId === undefined
-                      ? Effect.void
-                      : linkCreatedPullRequest({
-                          threadId: input.threadId,
-                          result,
-                          commandId: serverCommandId("pr-created-link"),
-                        }).pipe(
-                          Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
-                          Effect.provideService(ProjectService.ProjectService, projectService),
-                        )
-                    ).pipe(
-                      Effect.andThen(
-                        refreshPushedPullRequests(input, result).pipe(
-                          Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
-                          Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
-                          Effect.provideService(
-                            PullRequestService.PullRequestService,
-                            pullRequests,
-                          ),
-                        ),
-                      ),
-                      Effect.andThen(refreshGitStatus(input.cwd)),
-                      Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),
-                    ),
+                  onSuccess: () => Queue.end(queue).pipe(Effect.asVoid),
                 }),
               ),
           ),
@@ -3216,12 +3273,15 @@ export const layer = Layer.unwrap(
           return httpEffect;
         }).pipe(
           Effect.provide(
-            layerWsRpc(
-              session,
-              clientOrigin,
-              clientAnalyticsProps,
-              previewAutomationBroker,
-              serverBrowser,
+            Layer.merge(
+              layerWorkItemsRpc,
+              layerWsRpc(
+                session,
+                clientOrigin,
+                clientAnalyticsProps,
+                previewAutomationBroker,
+                serverBrowser,
+              ),
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees

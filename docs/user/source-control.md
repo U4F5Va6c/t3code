@@ -96,7 +96,7 @@ or its `codeup.aliyun.com` SSH/HTTPS URL. Git authentication remains separate an
 cloning, pushing, checkout, and expanding full file context. Publishing currently creates private
 repositories in the organization root.
 
-New line-level review drafts, reactions, labels, stacks, merge queues, draft/ready transitions,
+Reactions, labels, stacks, merge queues, draft/ready transitions,
 and branch update actions are not available. Existing line discussions can be read, replied to,
 and resolved. General comments also show their resolution status and can be resolved or reopened
 when your account permits it. Resolved comments are hidden by default; enable **Resolved or dismissed**
@@ -348,3 +348,9 @@ the scope and merge strategy. GitHub rebases the remaining stack after merging.
 It can rewrite history and restart checks. If a layer fails, earlier updates remain; resolve that
 layer before retrying. GitHub may require manual conflict resolution after a lower layer is amended,
 even when its changes look independent. Stack actions require an environment that supports them.
+
+### Private Codeup review drafts
+
+In a merge request's Code tab, select a line and add it to your review. The draft is saved privately on Codeup and returns after refresh. Open Review to edit draft text, discard individual drafts or all pending drafts, and submit the review. Discarding removes unpublished drafts from Codeup; it does not retract published comments.
+
+If the source, target, or comparison version changes, old drafts remain available to edit or discard but cannot be submitted. Review the current Code tab and create replacement comments at the correct lines. Guide excerpts cannot create platform drafts because they do not identify the complete comparison. GitHub reviews continue to hold local drafts until submitted.

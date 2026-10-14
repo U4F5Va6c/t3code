@@ -1,3 +1,10 @@
+import type {
+  PullRequestDraftList,
+  PullRequestDraftCreateInput,
+  PullRequestDraftUpdateInput,
+  PullRequestDraftRef,
+  PullRequestPersistedDraft,
+} from "@t3tools/contracts";
 import {
   canonicalRepositoryKey,
   isSshRemoteUrl,
@@ -295,6 +302,18 @@ export class PullRequestService extends Context.Service<
     readonly comment: (input: PullRequestCommentInput) => Effect.Effect<void, PullRequestError>;
     readonly updateComment: (
       input: PullRequestCommentUpdateInput,
+    ) => Effect.Effect<void, PullRequestError>;
+    readonly listReviewDrafts: (
+      input: PullRequestRef,
+    ) => Effect.Effect<PullRequestDraftList, PullRequestError>;
+    readonly createReviewDraft: (
+      input: PullRequestDraftCreateInput,
+    ) => Effect.Effect<PullRequestPersistedDraft, PullRequestError>;
+    readonly updateReviewDraft: (
+      input: PullRequestDraftUpdateInput,
+    ) => Effect.Effect<PullRequestPersistedDraft, PullRequestError>;
+    readonly deleteReviewDraft: (
+      input: PullRequestDraftRef,
     ) => Effect.Effect<void, PullRequestError>;
     readonly submitReview: (
       input: PullRequestSubmitReviewInput,
@@ -683,6 +702,18 @@ function withRateLimitBackoff(
     ...(api.updateComment === undefined
       ? {}
       : { updateComment: interactive("updateComment", api.updateComment) }),
+    ...(api.listReviewDrafts === undefined
+      ? {}
+      : { listReviewDrafts: interactive("listReviewDrafts", api.listReviewDrafts) }),
+    ...(api.createReviewDraft === undefined
+      ? {}
+      : { createReviewDraft: interactive("createReviewDraft", api.createReviewDraft) }),
+    ...(api.updateReviewDraft === undefined
+      ? {}
+      : { updateReviewDraft: interactive("updateReviewDraft", api.updateReviewDraft) }),
+    ...(api.deleteReviewDraft === undefined
+      ? {}
+      : { deleteReviewDraft: interactive("deleteReviewDraft", api.deleteReviewDraft) }),
     submitReview: interactive("submitReview", api.submitReview),
     listReviewerCandidates: interactive("listReviewerCandidates", api.listReviewerCandidates),
     setReviewerRequest: interactive("setReviewerRequest", api.setReviewerRequest),
@@ -1226,6 +1257,9 @@ export const make = Effect.gen(function* () {
       projectId: input.project.project.id,
       projectTitle: input.project.project.title,
       repository: input.project.repository,
+      ...(input.item.nativeIdentity === undefined
+        ? {}
+        : { nativeIdentity: input.item.nativeIdentity }),
       number: input.item.number,
       title: input.item.title,
       url: input.item.url,
@@ -1707,6 +1741,9 @@ export const make = Effect.gen(function* () {
             provider: project.api.kind,
             projectId: project.project.id,
             repository: project.repository,
+            ...(changeRequest.nativeIdentity === undefined
+              ? {}
+              : { nativeIdentity: changeRequest.nativeIdentity }),
             number: changeRequest.number,
             title: changeRequest.title,
             url: changeRequest.url,
@@ -1800,6 +1837,9 @@ export const make = Effect.gen(function* () {
             projectTitle: project.project.title,
             workspaceRoot: project.project.workspaceRoot,
             repository: project.repository,
+            ...(changeRequest.nativeIdentity === undefined
+              ? {}
+              : { nativeIdentity: changeRequest.nativeIdentity }),
             number: changeRequest.number,
             title: changeRequest.title,
             body: changeRequest.body,
@@ -2127,7 +2167,32 @@ export const make = Effect.gen(function* () {
                     ),
                   )
                 : Effect.succeed(false);
-            return mergeSettings.pipe(
+            // This fresh read is a preflight, not atomic fencing on hosts without a native guard.
+            const headPreflight =
+              input.expectedHeadSha === undefined
+                ? Effect.void
+                : project.api
+                    .getChangeRequest({
+                      cwd: project.project.workspaceRoot,
+                      repository: project.repository,
+                      host: project.host,
+                      number: input.number,
+                    })
+                    .pipe(
+                      Effect.mapError(toPullRequestError("runAction")),
+                      Effect.flatMap((current) =>
+                        current.headSha === input.expectedHeadSha
+                          ? Effect.void
+                          : Effect.fail(
+                              new PullRequestOperationError({
+                                operation: "runAction",
+                                detail: "The pull request head changed. Refresh before continuing.",
+                              }),
+                            ),
+                      ),
+                    );
+            return headPreflight.pipe(
+              Effect.andThen(mergeSettings),
               Effect.flatMap((removeAgentCreditsOnMerge) =>
                 project.api
                   .runAction({
@@ -2138,6 +2203,9 @@ export const make = Effect.gen(function* () {
                     action: input.action,
                     ...(removeAgentCreditsOnMerge ? { removeAgentCreditsOnMerge: true } : {}),
                     ...(input.stackNumber === undefined ? {} : { stackNumber: input.stackNumber }),
+                    ...(input.expectedHeadSha === undefined
+                      ? {}
+                      : { expectedHeadSha: input.expectedHeadSha }),
                     ...(input.expectedStackHeads === undefined
                       ? {}
                       : { expectedStackHeads: input.expectedStackHeads }),
@@ -2282,6 +2350,102 @@ export const make = Effect.gen(function* () {
       }),
     );
 
+  const listReviewDrafts: PullRequestService["Service"]["listReviewDrafts"] = Effect.fn(
+    "PullRequestService.listReviewDrafts",
+  )(function* (input) {
+    const project = yield* requireProject(input);
+    const operation = project.api.listReviewDrafts;
+    if (!project.api.capabilities.review.persistedDrafts || !operation)
+      return yield* new PullRequestOperationError({
+        operation: "listReviewDrafts",
+        detail: "This host does not support persisted review drafts.",
+      });
+    return yield* operation({
+      ...input,
+      cwd: project.project.workspaceRoot,
+      host: project.host,
+      repository: project.repository,
+    }).pipe(Effect.mapError(toPullRequestError("listReviewDrafts")));
+  });
+  const createReviewDraft: PullRequestService["Service"]["createReviewDraft"] = Effect.fn(
+    "PullRequestService.createReviewDraft",
+  )(function* (input) {
+    const project = yield* requireProject(input);
+    const operation = project.api.createReviewDraft;
+    if (!project.api.capabilities.review.persistedDrafts || !operation)
+      return yield* new PullRequestOperationError({
+        operation: "createReviewDraft",
+        detail: "This host does not support persisted review drafts.",
+      });
+    const viewer = yield* viewerPermissionsOf(project, input, "createReviewDraft");
+    if (!viewer.comment)
+      return yield* new PullRequestOperationError({
+        operation: "createReviewDraft",
+        detail: "You cannot modify review drafts on this repository.",
+      });
+    if (!input.body.trim())
+      return yield* new PullRequestOperationError({
+        operation: "createReviewDraft",
+        detail: "A draft comment cannot be empty.",
+      });
+    return yield* operation({
+      ...input,
+      cwd: project.project.workspaceRoot,
+      host: project.host,
+      repository: project.repository,
+    }).pipe(Effect.mapError(toPullRequestError("createReviewDraft")));
+  });
+  const updateReviewDraft: PullRequestService["Service"]["updateReviewDraft"] = Effect.fn(
+    "PullRequestService.updateReviewDraft",
+  )(function* (input) {
+    const project = yield* requireProject(input);
+    const operation = project.api.updateReviewDraft;
+    if (!project.api.capabilities.review.persistedDrafts || !operation)
+      return yield* new PullRequestOperationError({
+        operation: "updateReviewDraft",
+        detail: "This host does not support persisted review drafts.",
+      });
+    const viewer = yield* viewerPermissionsOf(project, input, "updateReviewDraft");
+    if (!viewer.comment)
+      return yield* new PullRequestOperationError({
+        operation: "updateReviewDraft",
+        detail: "You cannot modify review drafts on this repository.",
+      });
+    if (!input.body.trim())
+      return yield* new PullRequestOperationError({
+        operation: "updateReviewDraft",
+        detail: "A draft comment cannot be empty.",
+      });
+    return yield* operation({
+      ...input,
+      cwd: project.project.workspaceRoot,
+      host: project.host,
+      repository: project.repository,
+    }).pipe(Effect.mapError(toPullRequestError("updateReviewDraft")));
+  });
+  const deleteReviewDraft: PullRequestService["Service"]["deleteReviewDraft"] = Effect.fn(
+    "PullRequestService.deleteReviewDraft",
+  )(function* (input) {
+    const project = yield* requireProject(input);
+    const operation = project.api.deleteReviewDraft;
+    if (!project.api.capabilities.review.persistedDrafts || !operation)
+      return yield* new PullRequestOperationError({
+        operation: "deleteReviewDraft",
+        detail: "This host does not support persisted review drafts.",
+      });
+    const viewer = yield* viewerPermissionsOf(project, input, "deleteReviewDraft");
+    if (!viewer.comment)
+      return yield* new PullRequestOperationError({
+        operation: "deleteReviewDraft",
+        detail: "You cannot modify review drafts on this repository.",
+      });
+    return yield* operation({
+      ...input,
+      cwd: project.project.workspaceRoot,
+      host: project.host,
+      repository: project.repository,
+    }).pipe(Effect.mapError(toPullRequestError("deleteReviewDraft")));
+  });
   const submitReview: PullRequestService["Service"]["submitReview"] = (input) =>
     requireProject(input).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
@@ -2301,10 +2465,18 @@ export const make = Effect.gen(function* () {
         if (
           input.verdict !== "approve" &&
           input.body.trim().length === 0 &&
-          input.comments.length === 0
+          input.comments.length === 0 &&
+          !input.draftCommentIds?.length
         ) {
           return refuse("A review needs a summary or at least one comment.");
         }
+        if (
+          input.draftCommentIds !== undefined &&
+          (!review.persistedDrafts || input.comments.length > 0 || !input.expectedRevision)
+        )
+          return refuse(
+            "Persisted draft IDs require a supported host, a complete revision and no local comments.",
+          );
         return viewerPermissionsOf(project, input, "submitReview").pipe(
           Effect.flatMap((viewer): Effect.Effect<void, PullRequestError> => {
             if (!viewer.verdicts.includes(input.verdict)) {
@@ -2327,6 +2499,12 @@ export const make = Effect.gen(function* () {
                 number: input.number,
                 verdict: input.verdict,
                 ...(input.expectedHeadSha ? { expectedHeadSha: input.expectedHeadSha } : {}),
+                ...(input.draftCommentIds === undefined
+                  ? {}
+                  : { draftCommentIds: input.draftCommentIds }),
+                ...(input.expectedRevision === undefined
+                  ? {}
+                  : { expectedRevision: input.expectedRevision }),
                 body: input.body,
                 comments: input.comments,
               })
@@ -3581,6 +3759,10 @@ export const make = Effect.gen(function* () {
     update: invalidatedByMutation(update),
     comment: invalidatedByMutation(comment),
     updateComment: invalidatedByMutation(updateComment),
+    listReviewDrafts,
+    createReviewDraft,
+    updateReviewDraft,
+    deleteReviewDraft,
     submitReview: invalidatedByMutation(submitReview),
     replyToThread: invalidatedByMutation(replyToThread),
     setThreadResolution: invalidatedByMutation(setThreadResolution),

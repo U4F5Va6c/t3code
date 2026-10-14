@@ -15,6 +15,18 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  * prefix. Adding an RPC to `WsRpcGroup` without a label is a type error.
  */
 const RPC_AGGREGATES = {
+  [WS_METHODS.workItemsConnections]: "workItems",
+  [WS_METHODS.workItemsProjects]: "workItems",
+  [WS_METHODS.workItemsMetadata]: "workItems",
+  [WS_METHODS.workItemsSearch]: "workItems",
+  [WS_METHODS.workItemsGet]: "workItems",
+  [WS_METHODS.workItemsCreate]: "workItems",
+  [WS_METHODS.workItemsReceipt]: "workItems",
+  [WS_METHODS.workItemsRecover]: "workItems",
+  [WS_METHODS.workItemsUpdate]: "workItems",
+  [WS_METHODS.workItemsRelate]: "workItems",
+  [WS_METHODS.workItemsReady]: "workItems",
+
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: "orchestration",
@@ -116,6 +128,10 @@ const RPC_AGGREGATES = {
   [WS_METHODS.pullRequestsUpdate]: "pull-requests",
   [WS_METHODS.pullRequestsComment]: "pull-requests",
   [WS_METHODS.pullRequestsUpdateComment]: "pull-requests",
+  [WS_METHODS.pullRequestsListReviewDrafts]: "pull-requests",
+  [WS_METHODS.pullRequestsCreateReviewDraft]: "pull-requests",
+  [WS_METHODS.pullRequestsUpdateReviewDraft]: "pull-requests",
+  [WS_METHODS.pullRequestsDeleteReviewDraft]: "pull-requests",
   [WS_METHODS.pullRequestsSubmitReview]: "pull-requests",
   [WS_METHODS.pullRequestsReplyToThread]: "pull-requests",
   [WS_METHODS.pullRequestsSetThreadResolution]: "pull-requests",
@@ -128,6 +144,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.pullRequestsRequestReviewers]: "pull-requests",
   [WS_METHODS.pullRequestsLabelCandidates]: "pull-requests",
   [WS_METHODS.pullRequestsSetLabels]: "pull-requests",
+  [WS_METHODS.sourceControlListRepositories]: "source-control",
+  [WS_METHODS.sourceControlListBranches]: "source-control",
   [WS_METHODS.sourceControlLookupRepository]: "source-control",
   [WS_METHODS.sourceControlCloneRepository]: "source-control",
   [WS_METHODS.sourceControlPublishRepository]: "source-control",

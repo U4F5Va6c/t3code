@@ -5,7 +5,8 @@
   "exports": {
     "./client/definition": "./src/client/definition.ts",
     "./server/driver": "./src/server/driver.ts",
-    "./server/CodeupApi": "./src/server/CodeupApi.ts"
+    "./server/CodeupApi": "./src/server/CodeupApi.ts",
+    "./server/ProjexApi": "./src/server/ProjexApi.ts"
   },
   "scripts": {
     "typecheck": "tsc-rs --noEmit",

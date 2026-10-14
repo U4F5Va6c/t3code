@@ -88,6 +88,7 @@ export const AuthPreviewOperateScope = "preview:operate" as const;
 export const AuthDiagnosticsReadScope = "diagnostics:read" as const;
 export const AuthTerminalReadScope = "terminal:read" as const;
 export const AuthTerminalOperateScope = "terminal:operate" as const;
+export const AuthWorkItemsWriteScope = "work-items:write" as const;
 export const AuthSourceControlWriteScope = "source-control:write" as const;
 export const AuthFilesystemReadScope = "filesystem:read" as const;
 export const AuthFilesystemWriteScope = "filesystem:write" as const;
@@ -111,6 +112,7 @@ export const AuthEnvironmentScope = Schema.Literals([
   AuthFilesystemWriteScope,
   AuthReviewWriteScope,
   AuthSourceControlWriteScope,
+  AuthWorkItemsWriteScope,
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthRelayReadScope,
@@ -166,7 +168,10 @@ const legacyParents: Partial<Record<AuthEnvironmentScope, AuthEnvironmentScope>>
 /** Keep permission denials decodable by clients with the original scope enum. */
 export function authScopeRequiredResponse(requiredPermission: AuthEnvironmentScope) {
   return {
-    requiredScope: legacyParents[requiredPermission] ?? requiredPermission,
+    requiredScope:
+      requiredPermission === AuthWorkItemsWriteScope
+        ? AuthOrchestrationOperateScope
+        : (legacyParents[requiredPermission] ?? requiredPermission),
     requiredPermission,
   };
 }
@@ -213,6 +218,7 @@ export const AuthStandardClientScopes = [
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
   AuthSourceControlWriteScope,
+  AuthWorkItemsWriteScope,
   AuthFilesystemReadScope,
   AuthFilesystemWriteScope,
   AuthRelayReadScope,

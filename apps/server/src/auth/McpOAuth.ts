@@ -575,6 +575,7 @@ export const layerMcpClientAuthenticator = Layer.effect(
                 thread: undefined,
                 client: {
                   sessionId: client.sessionId,
+                  ...(client.scopes === undefined ? {} : { scopes: client.scopes }),
                   label: client.label,
                   access: client.access,
                 },
@@ -582,6 +583,7 @@ export const layerMcpClientAuthenticator = Layer.effect(
                   "orchestration",
                   "worktree",
                   "pull-requests",
+                  "work-items",
                 ]),
                 issuedAt,
               })),

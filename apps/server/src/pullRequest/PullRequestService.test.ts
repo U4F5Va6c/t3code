@@ -7,6 +7,7 @@ import * as KeyValueStore from "effect/persistence/KeyValueStore";
 import { assert, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -7704,4 +7705,307 @@ it.effect("uses repository-scoped accounts for author filters, review requests a
       "bob",
     );
   }),
+);
+
+it.effect("checks a fresh ordinary merge head and forwards it without changing stack heads", () =>
+  Effect.gen(function* () {
+    const calls: Array<Parameters<PullRequestProviderApi["runAction"]>[0]> = [];
+    let headSha = "current";
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider(SourceControlProviderKind.make("github"), {
+          getChangeRequest: () =>
+            Effect.succeed({ ...hostedChangeRequest("Description"), headSha }),
+          runAction: (input) =>
+            Effect.sync(() => {
+              calls.push(input);
+            }),
+        }),
+      ],
+    });
+    const input = {
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+      action: "merge" as const,
+      expectedHeadSha: "current",
+    };
+    yield* service.runAction(input);
+    assert.strictEqual(calls[0]?.expectedHeadSha, "current");
+    assert.isUndefined(calls[0]?.expectedStackHeads);
+    headSha = "new";
+    const error = yield* service.runAction(input).pipe(Effect.flip);
+    assert.strictEqual(error._tag, "PullRequestOperationError");
+    assert.strictEqual(calls.length, 1);
+    yield* service.runAction({
+      projectId: input.projectId,
+      repository: input.repository,
+      number: input.number,
+      action: input.action,
+    });
+    assert.strictEqual(calls.length, 2);
+  }),
+);
+
+it.effect(
+  "rejects wrong accounts before real managed operations and pins mutation/readback to one credential",
+  () =>
+    Effect.gen(function* () {
+      const credential = Context.Reference<string | null>("test/verifiedProviderCredential", {
+        defaultValue: () => null,
+      });
+      const observed: Array<{ operation: string; credential: string | null }> = [];
+      let verifications = 0;
+      const record = (operation: string) =>
+        Effect.gen(function* () {
+          observed.push({ operation, credential: yield* credential });
+        });
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        ],
+        providers: [
+          fakeProvider(SourceControlProviderKind.make("github"), {
+            withVerifiedCredential: (_, use) =>
+              Effect.suspend(() => {
+                const fingerprint = `credential-${++verifications}`;
+                return use({
+                  accountId: "101",
+                  viewer: "octocat",
+                  credentialFingerprint: fingerprint,
+                }).pipe(Effect.provideService(credential, fingerprint));
+              }),
+            getChangeRequest: () =>
+              record("detail").pipe(Effect.as(hostedChangeRequest("Description"))),
+            getDiff: () =>
+              record("diff").pipe(Effect.as({ patch: "", truncated: false, nextCursor: null })),
+            listReviewerCandidates: () =>
+              record("reviewerCandidates").pipe(Effect.as({ candidates: [], truncated: false })),
+            runAction: () => record("runAction"),
+            comment: () => record("comment"),
+            submitReview: () => record("submitReview"),
+            updateComment: () => record("updateComment"),
+            updateChangeRequest: () => record("update"),
+            setReviewerRequest: () => record("requestReviewers"),
+            replyToThread: () => record("reply"),
+            setThreadResolution: () => record("resolve"),
+          }),
+        ],
+      });
+      const ref = {
+        projectId: "p1" as ProjectId,
+        repository: "acme/web",
+        host: "github.com",
+        number: 1,
+        expectedAccountId: "wrong",
+      };
+      const operations = [
+        service.detail(ref),
+        service.diff(ref),
+        service.reviewerCandidates(ref),
+        service.threadComments({ ...ref, threadId: "discussion", cursor: "next" }),
+        service.diffFileContents({
+          ...ref,
+          oldPath: "file",
+          newPath: "file",
+          changeType: "change",
+        }),
+        service.runAction({ ...ref, action: "merge", expectedHeadSha: "head" }),
+        service.runAction({ ...ref, action: "close" }),
+        service.runAction({ ...ref, action: "reopen" }),
+        service.comment({ ...ref, body: "Comment" }),
+        service.submitReview({
+          ...ref,
+          verdict: "approve",
+          body: "",
+          comments: [],
+          expectedHeadSha: "head",
+        }),
+        service.updateComment({
+          ...ref,
+          body: "Updated",
+          commentId: "comment",
+          kind: "issue-comment",
+        }),
+        service.update({ ...ref, title: "Updated" }),
+        service.requestReviewers({
+          ...ref,
+          reviewers: [{ id: "reviewer", kind: "user" }],
+          requested: true,
+        }),
+        service.replyToThread({ ...ref, threadId: "discussion", body: "Reply" }),
+        service.setThreadResolution({ ...ref, threadId: "discussion", resolved: true }),
+      ];
+      for (const operation of operations) {
+        const error = yield* service
+          .withRoutingCredential(ref, operation.pipe(Effect.asVoid))
+          .pipe(Effect.flip);
+        assert.strictEqual(error._tag, "PullRequestOperationError");
+        if (error._tag === "PullRequestOperationError")
+          assert.strictEqual(error.operation, "routeIdentity");
+      }
+      assert.deepStrictEqual(observed, []);
+      const valid = { ...ref, expectedAccountId: "101" };
+      const before = verifications;
+      yield* service.withRoutingCredential(
+        valid,
+        Effect.gen(function* () {
+          yield* service.comment({ ...valid, body: "Comment" });
+          yield* service.detail(valid);
+        }),
+      );
+      assert.strictEqual(verifications, before + 1);
+      assert.deepStrictEqual(observed, [
+        { operation: "comment", credential: `credential-${before + 1}` },
+        { operation: "detail", credential: `credential-${before + 1}` },
+      ]);
+    }),
+);
+
+it.effect(
+  "fails closed for a specified Codeup account without verified routing while allowing ordinary calls",
+  () =>
+    Effect.gen(function* () {
+      let writes = 0;
+      const service = yield* makeService({
+        projects: [
+          project({
+            id: "p1",
+            title: "codeup",
+            workspaceRoot: "/a",
+            repository: "org/team/repo",
+            host: "codeup.aliyun.com",
+            provider: SourceControlProviderKind.make("codeup"),
+          }),
+        ],
+        providers: [
+          fakeProvider(SourceControlProviderKind.make("codeup"), {
+            comment: () =>
+              Effect.sync(() => {
+                writes++;
+              }),
+          }),
+        ],
+      });
+      const ref = {
+        projectId: "p1" as ProjectId,
+        repository: "org/team/repo",
+        host: "codeup.aliyun.com",
+        number: 1,
+      };
+      const pinned = { ...ref, expectedAccountId: "account" };
+      const error = yield* service
+        .withRoutingCredential(pinned, service.comment({ ...pinned, body: "Comment" }))
+        .pipe(Effect.flip);
+      assert.strictEqual(error._tag, "PullRequestOperationError");
+      assert.strictEqual(writes, 0);
+      yield* service.withRoutingCredential(ref, service.comment({ ...ref, body: "Comment" }));
+      assert.strictEqual(writes, 1);
+    }),
+);
+
+it.effect(
+  "checks persisted draft capabilities and viewer access and forwards the original revision",
+  () =>
+    Effect.gen(function* () {
+      let canComment = false;
+      const calls: unknown[] = [];
+      const revision = {
+        headSha: "head",
+        baseSha: "base",
+        fromPatchSetId: "b1",
+        toPatchSetId: "s2",
+      };
+      const provider = fakeProvider(SourceControlProviderKind.make("codeup"));
+      const service = yield* makeService({
+        projects: [
+          project({
+            id: "p1",
+            title: "Codeup",
+            workspaceRoot: "/a",
+            repository: "org/repo",
+            host: "codeup.aliyun.com",
+            provider: SourceControlProviderKind.make("codeup"),
+          }),
+        ],
+        providers: [
+          {
+            ...provider,
+            capabilities: {
+              ...provider.capabilities,
+              review: { ...provider.capabilities.review, persistedDrafts: true },
+            },
+            getViewerPermissions: () =>
+              Effect.succeed({
+                actions: [],
+                comment: canComment,
+                resolve: false,
+                verdicts: ["comment"],
+                requestReviewers: false,
+              }),
+            createReviewDraft: (input) =>
+              Effect.sync(() => {
+                calls.push(input);
+                return {
+                  id: "draft",
+                  body: input.body,
+                  author: null,
+                  path: input.path,
+                  side: "right" as const,
+                  line: 1,
+                  patchSetId: "s2",
+                  revision,
+                  stale: false,
+                  canEdit: true,
+                  canDelete: true,
+                };
+              }),
+            submitReview: (input) =>
+              Effect.sync(() => {
+                calls.push(input);
+              }),
+          },
+        ],
+      });
+      const ref = {
+        projectId: "p1" as ProjectId,
+        host: "codeup.aliyun.com",
+        repository: "org/repo",
+        number: 1,
+      };
+      const input = {
+        ...ref,
+        path: "file.ts",
+        body: "Draft",
+        position: { kind: "added" as const, newLine: 1 },
+        expectedRevision: revision,
+      };
+      yield* service.createReviewDraft(input).pipe(Effect.flip);
+      assert.deepStrictEqual(calls, []);
+      canComment = true;
+      yield* service.createReviewDraft(input);
+      assert.deepInclude(calls[0], { expectedRevision: revision, cwd: "/a" });
+      yield* service.submitReview({
+        ...ref,
+        verdict: "comment",
+        body: "",
+        comments: [],
+        draftCommentIds: ["draft"],
+        expectedRevision: revision,
+        expectedHeadSha: "head",
+      });
+      assert.deepInclude(calls[1], { draftCommentIds: ["draft"], expectedRevision: revision });
+      yield* service
+        .submitReview({
+          ...ref,
+          verdict: "comment",
+          body: "",
+          comments: [{ path: "file", body: "local", position: { kind: "added", newLine: 1 } }],
+          draftCommentIds: ["draft"],
+          expectedRevision: revision,
+        })
+        .pipe(Effect.flip);
+      assert.strictEqual(calls.length, 2);
+    }),
 );

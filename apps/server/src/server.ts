@@ -1,3 +1,7 @@
+import * as WorkItemsService from "./workItems/WorkItemsService.ts";
+import * as WorkItemReceipts from "./persistence/WorkItemCreationReceiptRepository.ts";
+import * as ProjexApi from "@t3tools/source-control-codeup/server/ProjexApi";
+import * as CodeupApi from "@t3tools/source-control-codeup/server/CodeupApi";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Clock from "effect/Clock";
@@ -338,6 +342,13 @@ const layerRepositoryIdentityResolver = Layer.effect(
   }),
 ).pipe(Layer.provide(layerSourceControlProviderRegistry), Layer.provide(ProcessRunner.layer));
 
+const layerWorkItemsService = WorkItemsService.layer.pipe(
+  Layer.provide(WorkItemReceipts.layer),
+  Layer.provide(ProjexApi.layer),
+  Layer.provide(CodeupApi.layer),
+  Layer.provide(layerSourceControlProviderRegistry),
+);
+
 const layerPullRequestService = PullRequestService.layer.pipe(
   Layer.provide(PullRequestProviderRegistry.layer),
   // Where the viewed-file marks live for a host that keeps none of its own.
@@ -655,6 +666,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(ProjectEnrichmentService.layer),
   Layer.provideMerge(Layer.mergeAll(NativeAppIconResolver.layer, layerProjectFaviconResolver)),
   Layer.provideMerge(layerRepositoryIdentityResolver),
+  Layer.provideMerge(layerWorkItemsService),
   Layer.provideMerge(layerServerEnvironment),
   Layer.provideMerge(layerAuth),
   Layer.provideMerge(ServerSecretStore.layer),
@@ -724,6 +736,7 @@ const layerMakeRoutes = Layer.mergeAll(
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
   ),
 ).pipe(
+  Layer.provide(layerWorkItemsService),
   // Guides read through the same pull request service as every other surface.
   Layer.provide(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
@@ -1122,4 +1135,8 @@ const layerMakeServer = Layer.unwrap(
 );
 
 // The CLI supplies configuration.
-export const runServer = Layer.launch(layerMakeServer);
+export const runServer: Effect.Effect<
+  never,
+  Layer.Error<typeof layerMakeServer>,
+  import("effect/FileSystem").FileSystem | import("effect/Path").Path | ServerConfig.ServerConfig
+> = Layer.launch(layerMakeServer);

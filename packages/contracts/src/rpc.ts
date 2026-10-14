@@ -1,3 +1,11 @@
+import { WORK_ITEM_OPERATIONS, WorkItemError } from "./workItems.ts";
+import {
+  PullRequestDraftList,
+  PullRequestDraftCreateInput,
+  PullRequestDraftUpdateInput,
+  PullRequestDraftRef,
+  PullRequestPersistedDraft,
+} from "./pullRequest.ts";
 import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
@@ -365,6 +373,10 @@ import {
   SourceControlRepositoryError,
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
+  SourceControlRepositoryDirectoryInput,
+  SourceControlRepositoryDirectoryResult,
+  SourceControlRepositoryBranchesInput,
+  SourceControlRepositoryBranchesResult,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
@@ -549,6 +561,10 @@ export const WS_METHODS = {
   pullRequestsUpdate: "pullRequests.update",
   pullRequestsComment: "pullRequests.comment",
   pullRequestsUpdateComment: "pullRequests.updateComment",
+  pullRequestsListReviewDrafts: "pullRequests.listReviewDrafts",
+  pullRequestsCreateReviewDraft: "pullRequests.createReviewDraft",
+  pullRequestsUpdateReviewDraft: "pullRequests.updateReviewDraft",
+  pullRequestsDeleteReviewDraft: "pullRequests.deleteReviewDraft",
   pullRequestsSubmitReview: "pullRequests.submitReview",
   pullRequestsReplyToThread: "pullRequests.replyToThread",
   pullRequestsSetThreadResolution: "pullRequests.setThreadResolution",
@@ -562,6 +578,19 @@ export const WS_METHODS = {
   pullRequestsSetLabels: "pullRequests.setLabels",
 
   // Source control methods
+  workItemsConnections: "workItems.connections",
+  workItemsProjects: "workItems.projects",
+  workItemsMetadata: "workItems.metadata",
+  workItemsSearch: "workItems.search",
+  workItemsGet: "workItems.get",
+  workItemsCreate: "workItems.create",
+  workItemsReceipt: "workItems.receipt",
+  workItemsRecover: "workItems.recover",
+  workItemsUpdate: "workItems.update",
+  workItemsRelate: "workItems.relate",
+  workItemsReady: "workItems.ready",
+  sourceControlListRepositories: "sourceControl.listRepositories",
+  sourceControlListBranches: "sourceControl.listBranches",
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
@@ -1087,6 +1116,26 @@ const WsPullRequestsUpdateCommentRpc = Rpc.make(WS_METHODS.pullRequestsUpdateCom
   error: PullRequestRpcError,
 });
 
+const WsPullRequestsListReviewDraftsRpc = Rpc.make(WS_METHODS.pullRequestsListReviewDrafts, {
+  payload: PullRequestRef,
+  success: PullRequestDraftList,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsCreateReviewDraftRpc = Rpc.make(WS_METHODS.pullRequestsCreateReviewDraft, {
+  payload: PullRequestDraftCreateInput,
+  success: PullRequestPersistedDraft,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsUpdateReviewDraftRpc = Rpc.make(WS_METHODS.pullRequestsUpdateReviewDraft, {
+  payload: PullRequestDraftUpdateInput,
+  success: PullRequestPersistedDraft,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsDeleteReviewDraftRpc = Rpc.make(WS_METHODS.pullRequestsDeleteReviewDraft, {
+  payload: PullRequestDraftRef,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
 const WsPullRequestsSubmitReviewRpc = Rpc.make(WS_METHODS.pullRequestsSubmitReview, {
   payload: PullRequestSubmitReviewInput,
   success: Schema.Void,
@@ -1158,6 +1207,17 @@ const WsPullRequestsSetLabelsRpc = Rpc.make(WS_METHODS.pullRequestsSetLabels, {
   payload: PullRequestLabelChangeInput,
   success: Schema.Void,
   error: PullRequestRpcError,
+});
+
+const WsSourceControlListRepositoriesRpc = Rpc.make(WS_METHODS.sourceControlListRepositories, {
+  payload: SourceControlRepositoryDirectoryInput,
+  success: SourceControlRepositoryDirectoryResult,
+  error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+const WsSourceControlListBranchesRpc = Rpc.make(WS_METHODS.sourceControlListBranches, {
+  payload: SourceControlRepositoryBranchesInput,
+  success: SourceControlRepositoryBranchesResult,
+  error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
 });
 
 const WsSourceControlLookupRepositoryRpc = Rpc.make(WS_METHODS.sourceControlLookupRepository, {
@@ -1875,7 +1935,74 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
   { error: EnvironmentAuthorizationError },
 ) {}
 
+const WsWorkItemsConnectionsRpc = Rpc.make(WS_METHODS.workItemsConnections, {
+  payload: WORK_ITEM_OPERATIONS.connections.input,
+  success: WORK_ITEM_OPERATIONS.connections.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsProjectsRpc = Rpc.make(WS_METHODS.workItemsProjects, {
+  payload: WORK_ITEM_OPERATIONS.projects.input,
+  success: WORK_ITEM_OPERATIONS.projects.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsMetadataRpc = Rpc.make(WS_METHODS.workItemsMetadata, {
+  payload: WORK_ITEM_OPERATIONS.metadata.input,
+  success: WORK_ITEM_OPERATIONS.metadata.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsSearchRpc = Rpc.make(WS_METHODS.workItemsSearch, {
+  payload: WORK_ITEM_OPERATIONS.search.input,
+  success: WORK_ITEM_OPERATIONS.search.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsGetRpc = Rpc.make(WS_METHODS.workItemsGet, {
+  payload: WORK_ITEM_OPERATIONS.get.input,
+  success: WORK_ITEM_OPERATIONS.get.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsCreateRpc = Rpc.make(WS_METHODS.workItemsCreate, {
+  payload: WORK_ITEM_OPERATIONS.create.input,
+  success: WORK_ITEM_OPERATIONS.create.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsReceiptRpc = Rpc.make(WS_METHODS.workItemsReceipt, {
+  payload: WORK_ITEM_OPERATIONS.receipt.input,
+  success: WORK_ITEM_OPERATIONS.receipt.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsRecoverRpc = Rpc.make(WS_METHODS.workItemsRecover, {
+  payload: WORK_ITEM_OPERATIONS.recover.input,
+  success: WORK_ITEM_OPERATIONS.recover.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsUpdateRpc = Rpc.make(WS_METHODS.workItemsUpdate, {
+  payload: WORK_ITEM_OPERATIONS.update.input,
+  success: WORK_ITEM_OPERATIONS.update.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsRelateRpc = Rpc.make(WS_METHODS.workItemsRelate, {
+  payload: WORK_ITEM_OPERATIONS.relate.input,
+  success: WORK_ITEM_OPERATIONS.relate.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
+const WsWorkItemsReadyRpc = Rpc.make(WS_METHODS.workItemsReady, {
+  payload: WORK_ITEM_OPERATIONS.ready.input,
+  success: WORK_ITEM_OPERATIONS.ready.output,
+  error: Schema.Union([WorkItemError, EnvironmentAuthorizationError]),
+});
 export const WsRpcGroup = RpcGroup.make(
+  WsWorkItemsConnectionsRpc,
+  WsWorkItemsProjectsRpc,
+  WsWorkItemsMetadataRpc,
+  WsWorkItemsSearchRpc,
+  WsWorkItemsGetRpc,
+  WsWorkItemsCreateRpc,
+  WsWorkItemsReceiptRpc,
+  WsWorkItemsRecoverRpc,
+  WsWorkItemsUpdateRpc,
+  WsWorkItemsRelateRpc,
+  WsWorkItemsReadyRpc,
+
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
@@ -1962,6 +2089,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsUpdateRpc,
   WsPullRequestsCommentRpc,
   WsPullRequestsUpdateCommentRpc,
+  WsPullRequestsListReviewDraftsRpc,
+  WsPullRequestsCreateReviewDraftRpc,
+  WsPullRequestsUpdateReviewDraftRpc,
+  WsPullRequestsDeleteReviewDraftRpc,
   WsPullRequestsSubmitReviewRpc,
   WsPullRequestsReplyToThreadRpc,
   WsPullRequestsSetThreadResolutionRpc,
@@ -1973,6 +2104,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsRequestReviewersRpc,
   WsPullRequestsLabelCandidatesRpc,
   WsPullRequestsSetLabelsRpc,
+  WsSourceControlListRepositoriesRpc,
+  WsSourceControlListBranchesRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
