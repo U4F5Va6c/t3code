@@ -1,3 +1,4 @@
+import { usePullRequestReviewDrafts } from "./usePullRequestReviewDrafts";
 import type { EnvironmentId, PullRequestRef, PullRequestReviewGuideStop } from "@t3tools/contracts";
 import { SparklesIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo } from "react";
@@ -15,7 +16,6 @@ import { useReviewGuideWriter } from "./guide/useReviewGuideWriter";
 import {
   nextPendingReviewCommentId,
   pullRequestReviewKey,
-  usePendingReviewComments,
   usePullRequestReviewStore,
 } from "./pullRequestReviewStore";
 
@@ -31,6 +31,8 @@ export function PullRequestGuideTab({
   workspaceRoot,
   active,
   canComment,
+  persistedDrafts = false,
+  viewer,
   onAskAboutLines,
   onAskAboutStop,
   onFinishReview,
@@ -47,6 +49,8 @@ export function PullRequestGuideTab({
   active: boolean;
   /** Whether this reader may queue line comments for a review on this host. */
   canComment: boolean;
+  persistedDrafts?: boolean;
+  viewer?: string | undefined;
   /** Opens an agent thread about lines of the change. Null where no thread can be opened. */
   onAskAboutLines: ((comment: ReviewCommentContext, request: string) => void) | null;
   onAskAboutStop:
@@ -67,7 +71,13 @@ export function PullRequestGuideTab({
   const runKey = guideRunKey(environmentId, reference);
   // Line comments join the review the Code tab collects, so either place shows and sends them.
   const reviewKey = pullRequestReviewKey(reference);
-  const pending = usePendingReviewComments(reference);
+  const reviewDrafts = usePullRequestReviewDrafts(
+    environmentId,
+    reference,
+    persistedDrafts,
+    viewer,
+  );
+  const pending = persistedDrafts ? [] : reviewDrafts.comments;
   const addComment = usePullRequestReviewStore((store) => store.addComment);
   const removeComment = usePullRequestReviewStore((store) => store.removeComment);
   const commenting = useMemo<ExcerptCommenting | null>(
@@ -75,7 +85,7 @@ export function PullRequestGuideTab({
       !canComment && onAskAboutLines === null
         ? null
         : {
-            canComment,
+            canComment: canComment && !persistedDrafts,
             pending,
             onComment: ({ path, oldPath, position, body }) =>
               addComment(reviewKey, {
@@ -88,7 +98,7 @@ export function PullRequestGuideTab({
             onRemove: (commentId) => removeComment(reviewKey, commentId),
             onAskAgent: onAskAboutLines,
           },
-    [addComment, canComment, onAskAboutLines, pending, removeComment, reviewKey],
+    [addComment, canComment, onAskAboutLines, pending, removeComment, reviewKey, persistedDrafts],
   );
   useEffect(() => {
     if (!active) return;
@@ -160,6 +170,12 @@ export function PullRequestGuideTab({
 
   return (
     <GuideProseContext value={{ environmentId, cwd: workspaceRoot }}>
+      {persistedDrafts ? (
+        <p className="p-3 text-sm text-muted-foreground">
+          Create private inline drafts from the current Code tab. Guide excerpts do not carry a
+          complete comparison revision.
+        </p>
+      ) : null}
       <GuideTour
         environmentId={environmentId}
         reference={reference}

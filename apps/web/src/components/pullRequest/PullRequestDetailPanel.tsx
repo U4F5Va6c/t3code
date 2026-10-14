@@ -2960,6 +2960,8 @@ export function PullRequestDetailPanel({
                   active={tab === "guide"}
                   title={detail.title}
                   workspaceRoot={detail.workspaceRoot}
+                  persistedDrafts={detail.capabilities.review.persistedDrafts === true}
+                  viewer={detail.viewer}
                   canComment={
                     detail.capabilities.review.inlineComment && detail.viewerPermissions.comment
                   }

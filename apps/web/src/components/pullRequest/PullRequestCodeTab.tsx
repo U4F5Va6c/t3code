@@ -1,3 +1,5 @@
+import type { PullRequestReviewRevision } from "@t3tools/contracts";
+import { usePullRequestReviewDrafts } from "./usePullRequestReviewDrafts";
 import type { CodeViewItem, DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
 import type { CodeViewDiffItem, CodeViewHandle } from "@pierre/diffs/react";
 import type {
@@ -42,7 +44,7 @@ import {
   getRenderablePatch,
   resolveDiffThemeName,
   resolveFileDiffPath,
-  resolveFileDiffPreviousPath,
+  resolveFileDiffReviewPaths,
   type RenderablePatch,
 } from "~/lib/diffRendering";
 import { APP_BASE_NAME } from "~/branding";
@@ -95,13 +97,7 @@ import {
 } from "./pullRequestDiff.logic";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
 import { usePullRequestFilesViewed } from "./usePullRequestFilesViewed";
-import {
-  nextPendingReviewCommentId,
-  pullRequestReviewKey,
-  usePendingReviewComments,
-  usePullRequestReviewStore,
-  type PendingReviewComment,
-} from "./pullRequestReviewStore";
+import { pullRequestReviewKey, type PendingReviewComment } from "./pullRequestReviewStore";
 
 /** Everything pinned to one line of one file: what is already there, and what is being added. */
 interface ReviewAnnotationGroup {
@@ -119,6 +115,7 @@ const PULL_REQUEST_FILE_TREE_STORAGE_KEY = "t3code.pullRequestFileTreeOpen";
 
 /** One answer from the host: a whole number of files, and where the next one carries on. */
 interface DiffSlice {
+  readonly revision?: PullRequestReviewRevision;
   /** What was asked for, null being the first slice. Identifies the slice among the loaded ones. */
   readonly cursor: string | null;
   readonly patch: string;
@@ -151,6 +148,7 @@ interface MutableAnnotationGroup {
 }
 
 interface DraftAnchor {
+  readonly revision?: PullRequestReviewRevision;
   readonly fileKey: string;
   readonly path: string;
   /** What the file was called before the change, for the hosts that resolve a position by both. */
@@ -236,6 +234,7 @@ function PullRequestCodeTab({
     range: SelectedLineRange;
   } | null>(null);
   const [draft, setDraft] = useState<DraftAnchor | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [threadPending, setThreadPending] = useState(false);
   const [orphansOpen, setOrphansOpen] = useState(false);
   // Which pull request the slices belong to travels with them, so a render taken before the
@@ -289,6 +288,7 @@ function PullRequestCodeTab({
       const slices = previous.key === scopeKey ? previous.slices : NO_SLICES;
       const next = {
         cursor,
+        ...(data.revision ? { revision: data.revision } : {}),
         patch: data.patch,
         truncated: data.truncated,
         nextCursor: data.nextCursor,
@@ -302,6 +302,7 @@ function PullRequestCodeTab({
       if (
         existing !== undefined &&
         existing.patch === next.patch &&
+        JSON.stringify(existing.revision) === JSON.stringify(next.revision) &&
         existing.truncated === next.truncated &&
         existing.nextCursor === next.nextCursor &&
         existing.omittedFileStats.length === next.omittedFileStats.length &&
@@ -330,10 +331,17 @@ function PullRequestCodeTab({
       input: { ...reference, ...(commit === null ? {} : { commit }) },
     }),
   );
-  const reviewKey = referenceKey;
-  const pendingComments = usePendingReviewComments(reference);
-  const addComment = usePullRequestReviewStore((store) => store.addComment);
-  const removeComment = usePullRequestReviewStore((store) => store.removeComment);
+  const persistedDrafts = detail.capabilities.review.persistedDrafts === true;
+  const reviewDrafts = usePullRequestReviewDrafts(
+    environmentId,
+    reference,
+    persistedDrafts,
+    detail.viewer,
+    refreshToken,
+  );
+  const pendingComments = reviewDrafts.comments;
+  const addComment = reviewDrafts.add;
+  const removeComment = reviewDrafts.remove;
   const replyToThread = useAtomCommand(pullRequestEnvironment.replyToThread, {
     reportFailure: false,
   });
@@ -365,14 +373,18 @@ function PullRequestCodeTab({
     const hostReview = detail.capabilities.review;
     const viewer = detail.viewerPermissions;
     return {
-      inlineComment: hostReview.inlineComment && viewer.comment,
+      inlineComment:
+        (hostReview.inlineComment || hostReview.persistedDrafts === true) && viewer.comment,
       reply: hostReview.reply && viewer.comment,
       resolve: hostReview.resolve && viewer.resolve,
     };
   }, [detail.capabilities.review, detail.viewerPermissions]);
   // A comment is posted against the pull request's head diff, so a line number taken from one
   // commit's own diff would land somewhere else entirely. Commenting waits for the whole change.
-  const canCommentOnLines = review.inlineComment && commit === null;
+  const canCommentOnLines =
+    review.inlineComment &&
+    commit === null &&
+    (!persistedDrafts || (reviewDrafts.canWrite && diffQuery.data?.revision !== undefined));
   // Every slice is parsed on its own and the result held, so a slice arriving costs one parse
   // rather than one per slice already on screen. Its cache key carries the theme, which is what
   // the tokenizer caches against, so a theme change is still a fresh parse.
@@ -497,7 +509,15 @@ function PullRequestCodeTab({
         // commit's diff must not place them either — the same line means other code there.
         if (commit === null) {
           for (const comment of pendingComments) {
-            if (comment.path !== path) continue;
+            if (comment.path !== path || comment.stale) continue;
+            if (
+              persistedDrafts &&
+              (!comment.revision ||
+                !loadedSlices.every(
+                  (slice) => JSON.stringify(slice.revision) === JSON.stringify(comment.revision),
+                ))
+            )
+              continue;
             const anchor = getReviewPositionAnchor(comment.position);
             groupAt(anchor.side, anchor.line).pending.push(comment);
           }
@@ -549,7 +569,16 @@ function PullRequestCodeTab({
           ),
         };
       }),
-    [commit, detail.reviewThreads, draft, files, pendingComments, placedThreadIds],
+    [
+      commit,
+      detail.reviewThreads,
+      draft,
+      files,
+      pendingComments,
+      placedThreadIds,
+      persistedDrafts,
+      loadedSlices,
+    ],
   );
 
   const items = useMemo<CodeViewDiffItem<ReviewAnnotationGroup>[]>(
@@ -723,24 +752,32 @@ function PullRequestCodeTab({
       // A range collapses to its last line: only GitHub carries a multi-line comment, and one
       // that silently lost its first line on the other hosts would be worse than one line.
       const path = resolveFileDiffPath(file);
-      const previousPath = resolveFileDiffPreviousPath(file);
-      const sourceFile = parsedSlices
-        .flatMap((slice) => (slice?.kind === "files" ? slice.sourceFiles : []))
-        .find((candidate) => resolveFileDiffPath(candidate) === path);
+      const sourceSliceIndex = parsedSlices.findIndex(
+        (slice) =>
+          slice?.kind === "files" &&
+          slice.sourceFiles.some((candidate) => resolveFileDiffPath(candidate) === path),
+      );
+      const sourceSlice = parsedSlices[sourceSliceIndex];
+      const sourceFile =
+        sourceSlice?.kind === "files"
+          ? sourceSlice.sourceFiles.find((candidate) => resolveFileDiffPath(candidate) === path)
+          : undefined;
+      const revision = loadedSlices[sourceSliceIndex]?.revision;
+      if (persistedDrafts && !revision) return;
       const side = range.endSide ?? range.side;
       const position =
         (sourceFile && resolveDiffReviewPosition(sourceFile, range.end, side)) ??
         resolveDiffReviewPosition(file, range.end, side);
       if (position === null) return;
       setDraft({
+        ...(revision ? { revision } : {}),
         fileKey: item.id,
-        path,
-        oldPath: previousPath === path ? null : previousPath,
+        ...resolveFileDiffReviewPaths(file, sourceFile),
         position,
         range,
       });
     },
-    [canCommentOnLines, files, parsedSlices],
+    [canCommentOnLines, files, parsedSlices, loadedSlices, persistedDrafts],
   );
 
   // Built here because the parsed diff only lives here, and built by the same function the
@@ -1018,8 +1055,17 @@ function PullRequestCodeTab({
         {annotation.metadata.pending.map((comment) => (
           <PendingReviewCommentCard
             key={comment.id}
-            comment={comment}
-            onRemove={() => removeComment(reviewKey, comment.id)}
+            comment={{
+              ...comment,
+              canEdit: comment.canEdit !== false && (!persistedDrafts || reviewDrafts.canWrite),
+              canDelete: comment.canDelete !== false && (!persistedDrafts || reviewDrafts.canWrite),
+            }}
+            onRemove={() => {
+              void removeComment(comment.id);
+            }}
+            {...(persistedDrafts
+              ? { onEdit: (body: string) => reviewDrafts.update(comment.id, body) }
+              : {})}
           />
         ))}
         {annotation.metadata.draft && draft ? (
@@ -1028,6 +1074,7 @@ function PullRequestCodeTab({
             rangeLabel={`${draft.path}:${getReviewPositionAnchor(draft.position).line}`}
             text=""
             submitLabel="Add to review"
+            pending={savingDraft}
             {...(onAddToAgentSelection
               ? {
                   secondaryAction: {
@@ -1043,14 +1090,20 @@ function PullRequestCodeTab({
               setDraft(null);
               setSelectedLines(null);
             }}
-            onComment={(body) => {
-              addComment(reviewKey, {
-                id: nextPendingReviewCommentId(),
-                path: draft.path,
-                ...(draft.oldPath === null ? {} : { oldPath: draft.oldPath }),
-                position: draft.position,
-                body,
-              });
+            onComment={async (body) => {
+              if (savingDraft) return;
+              setSavingDraft(true);
+              const added = await addComment(
+                {
+                  path: draft.path,
+                  ...(draft.oldPath === null ? {} : { oldPath: draft.oldPath }),
+                  position: draft.position,
+                  body,
+                },
+                draft.revision,
+              );
+              setSavingDraft(false);
+              if (!added) return;
               setDraft(null);
               setSelectedLines(null);
             }}
@@ -1065,7 +1118,10 @@ function PullRequestCodeTab({
       onAddToAgentSelection,
       removeComment,
       renderThreadCard,
-      reviewKey,
+      persistedDrafts,
+      reviewDrafts.update,
+      reviewDrafts.canWrite,
+      savingDraft,
     ],
   );
 

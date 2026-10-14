@@ -61,6 +61,8 @@ function harness(
     acceptedBeforeTimeout?: boolean;
     comments?: typeof Json.Comments.Type;
     members?: typeof Json.Members.Type;
+    comparison?: typeof Json.Compare.Type;
+    patches?: typeof Json.PatchSets.Type;
   } = {},
 ) {
   const requests: Array<{ method: string; url: string; body: unknown }> = [];
@@ -90,14 +92,27 @@ function harness(
         return Effect.succeed(
           HttpClientResponse.fromWeb(request, new Response("{}", { status: 503 })),
         );
+      const body = requests.at(-1)?.body as Record<string, unknown> | null;
+      if (request.method === "DELETE" && url.pathname.includes("/comments/"))
+        comments = comments.filter((c) => !url.pathname.endsWith(`/comments/${c.comment_biz_id}`));
+      if (url.pathname.endsWith("/review") && Array.isArray(body?.submitDraftCommentIds)) {
+        const submitted = body.submitDraftCommentIds;
+        comments = comments.map((c) =>
+          submitted.includes(c.comment_biz_id) ? { ...c, state: "OPENED" } : c,
+        );
+      }
       if (url.pathname.endsWith("/merge")) status = "MERGED";
       if (url.pathname.endsWith("/close")) status = "CLOSED";
       if (url.pathname.endsWith("/reopen")) status = "UNDER_REVIEW";
       if (request.method === "PUT" && url.pathname.includes("/comments/")) {
-        const body = requests.at(-1)?.body as { resolved: boolean };
+        const body = requests.at(-1)?.body as { resolved?: boolean; content?: string };
         comments = comments.map((comment) =>
           url.pathname.endsWith(`/comments/${comment.comment_biz_id}`)
-            ? { ...comment, resolved: body.resolved }
+            ? {
+                ...comment,
+                ...(body.resolved === undefined ? {} : { resolved: body.resolved }),
+                ...(body.content === undefined ? {} : { content: body.content }),
+              }
             : comment,
         );
       }
@@ -110,10 +125,26 @@ function harness(
         return Effect.succeed(
           HttpClientResponse.fromWeb(request, new Response("{}", { status: 503 })),
         );
-      data = { result: true };
+      if (url.pathname.endsWith("/comments") && body?.draft === true) {
+        const draft = {
+          comment_biz_id: `draft-${comments.length}`,
+          content: String(body.content),
+          author: { ...user, userId: "organization-viewer" },
+          comment_time: mr.createTime,
+          comment_type: "INLINE_COMMENT",
+          state: "DRAFT",
+          filePath: String(body.file_path),
+          line_number: Number(body.line_number),
+          from_patchset_biz_id: String(body.from_patchset_biz_id),
+          to_patchset_biz_id: String(body.to_patchset_biz_id),
+          related_patchset: { patchSetBizId: String(body.patchset_biz_id) },
+        };
+        comments = [...comments, draft];
+        data = draft;
+      } else data = { result: true };
     } else if (url.pathname.endsWith("/diffs/patches")) {
       patchReads++;
-      data = patchSets.map((patch) =>
+      data = (options.patches ?? patchSets).map((patch) =>
         (options.changedBeforeComment &&
           patchReads > 1 &&
           patch.relatedMergeItemType === "MERGE_SOURCE") ||
@@ -124,7 +155,7 @@ function harness(
           ? { ...patch, commitId: "changed" }
           : patch,
       );
-    } else if (url.pathname.endsWith("/compares")) data = compare;
+    } else if (url.pathname.endsWith("/compares")) data = options.comparison ?? compare;
     else if (url.pathname.endsWith("/ciCheckList")) {
       checksRead = true;
       data = options.checks ?? {
@@ -611,5 +642,273 @@ it.effect("reads all reviewer candidates from the non-paginated members endpoint
     expect(memberRequests).toHaveLength(1);
     expect(new URL(memberRequests[0]!.url).search).toBe("");
     expect(memberRequests[0]!.method).toBe("GET");
+  }).pipe(Effect.provide(layer));
+});
+
+const draftRevision = {
+  baseSha: "base",
+  headSha: "head",
+  fromPatchSetId: "b1",
+  toPatchSetId: "s2",
+};
+const privateDraft = {
+  comment_biz_id: "private",
+  content: "Private body",
+  author: { ...user, userId: "organization-viewer" },
+  comment_time: mr.createTime,
+  comment_type: "INLINE_COMMENT",
+  state: "DRAFT",
+  filePath: "new.ts",
+  line_number: 1,
+  from_patchset_biz_id: "b1",
+  to_patchset_biz_id: "s2",
+  related_patchset: { patchSetBizId: "s2" },
+};
+it.effect(
+  "keeps private drafts out of public activity and preserves unknown and stale drafts",
+  () => {
+    const { layer } = harness({
+      comments: [
+        privateDraft,
+        { ...privateDraft, comment_biz_id: "other", author: user },
+        {
+          ...privateDraft,
+          comment_biz_id: "unknown",
+          filePath: null,
+          line_number: null,
+          related_patchset: null,
+        },
+        {
+          ...privateDraft,
+          comment_biz_id: "old",
+          to_patchset_biz_id: "s1",
+          related_patchset: { patchSetBizId: "s1" },
+        },
+      ],
+    });
+    return Effect.gen(function* () {
+      const p = yield* Provider.make;
+      const list = yield* p.listReviewDrafts(input);
+      expect(list.drafts.map((d) => d.id)).toEqual(["private", "unknown", "old"]);
+      expect(list.drafts[1]).toMatchObject({
+        body: "Private body",
+        path: null,
+        stale: true,
+        canDelete: true,
+      });
+      expect(list.drafts[2]).toMatchObject({ stale: true, revision: { headSha: "old" } });
+      expect((yield* p.getChangeRequestActivity(input)).comments).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  },
+);
+it.effect(
+  "creates and rereads both renamed sides, edits the original anchor, and submits only selected drafts without a verdict",
+  () => {
+    const { layer, requests } = harness({
+      comparison: {
+        commits: [],
+        diffs: [
+          {
+            oldPath: "old.ts",
+            newPath: "new.ts",
+            renamedFile: true,
+            diff: "@@ -1 +1 @@\n-old\n+new\n",
+          },
+        ],
+      },
+    });
+    return Effect.gen(function* () {
+      const p = yield* Provider.make;
+      const left = yield* p.createReviewDraft({
+        ...input,
+        path: "new.ts",
+        oldPath: "old.ts",
+        position: { kind: "deleted", oldLine: 1 },
+        body: "Left",
+        expectedRevision: draftRevision,
+      });
+      const right = yield* p.createReviewDraft({
+        ...input,
+        path: "new.ts",
+        oldPath: "old.ts",
+        position: { kind: "added", newLine: 1 },
+        body: "Right",
+        expectedRevision: draftRevision,
+      });
+      expect(left).toMatchObject({
+        path: "new.ts",
+        oldPath: "old.ts",
+        side: "left",
+        patchSetId: "b1",
+        stale: false,
+      });
+      expect(right).toMatchObject({ side: "right", patchSetId: "s2", stale: false });
+      expect(
+        requests
+          .filter((r) => r.method === "POST" && r.url.endsWith("/comments"))
+          .map((r) => r.body),
+      ).toMatchObject([
+        { file_path: "old.ts", patchset_biz_id: "b1" },
+        { file_path: "new.ts", patchset_biz_id: "s2" },
+      ]);
+      expect(
+        (yield* p.updateReviewDraft({ ...input, draftCommentId: left.id, body: "Edited" })).body,
+      ).toBe("Edited");
+      yield* p.submitReview({
+        ...input,
+        verdict: "comment",
+        body: "",
+        comments: [],
+        expectedHeadSha: "head",
+        expectedRevision: draftRevision,
+        draftCommentIds: [left.id],
+      });
+      expect(requests.find((r) => r.url.endsWith("/review"))?.body).toEqual({
+        submitDraftCommentIds: [left.id],
+      });
+      expect((yield* p.listReviewDrafts(input)).drafts.map((d) => d.id)).toEqual([right.id]);
+      yield* p.deleteReviewDraft({ ...input, draftCommentId: right.id });
+      expect((yield* p.listReviewDrafts(input)).drafts).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  },
+);
+it.effect.each(["headSha", "baseSha", "fromPatchSetId", "toPatchSetId"] as const)(
+  "rejects stale %s without creation or submission",
+  (field) => {
+    const { layer, requests } = harness({ comments: [privateDraft] });
+    return Effect.gen(function* () {
+      const p = yield* Provider.make;
+      const expectedRevision = { ...draftRevision, [field]: "old-version" };
+      yield* p
+        .createReviewDraft({
+          ...input,
+          path: "new.ts",
+          position: { kind: "added", newLine: 1 },
+          body: "Draft",
+          expectedRevision,
+        })
+        .pipe(Effect.flip);
+      yield* p
+        .submitReview({
+          ...input,
+          verdict: "comment",
+          body: "",
+          comments: [],
+          expectedHeadSha: expectedRevision.headSha,
+          expectedRevision,
+          draftCommentIds: ["private"],
+        })
+        .pipe(Effect.flip);
+      expect(requests.every((r) => r.method === "GET" || r.url.endsWith("/comments/list"))).toBe(
+        true,
+      );
+    }).pipe(Effect.provide(layer));
+  },
+);
+it.effect(
+  "rejects foreign, published and missing IDs and invalid line anchors before mutation",
+  () => {
+    const { layer, requests } = harness({
+      comments: [
+        { ...privateDraft, author: user },
+        { ...privateDraft, comment_biz_id: "published", state: "OPENED" },
+      ],
+    });
+    return Effect.gen(function* () {
+      const p = yield* Provider.make;
+      for (const id of ["private", "published", "other-mr"]) {
+        yield* p.updateReviewDraft({ ...input, draftCommentId: id, body: "No" }).pipe(Effect.flip);
+        yield* p.deleteReviewDraft({ ...input, draftCommentId: id }).pipe(Effect.flip);
+        yield* p
+          .submitReview({
+            ...input,
+            verdict: "comment",
+            body: "",
+            comments: [],
+            expectedHeadSha: "head",
+            expectedRevision: draftRevision,
+            draftCommentIds: [id],
+          })
+          .pipe(Effect.flip);
+      }
+      yield* p
+        .createReviewDraft({
+          ...input,
+          path: "new.ts",
+          position: { kind: "added", newLine: 99 },
+          body: "No",
+          expectedRevision: draftRevision,
+        })
+        .pipe(Effect.flip);
+      expect(requests.every((r) => r.method === "GET" || r.url.endsWith("/comments/list"))).toBe(
+        true,
+      );
+    }).pipe(Effect.provide(layer));
+  },
+);
+it.effect("allows stale body edits and discard but never submits a stale draft", () => {
+  const { layer, requests } = harness({
+    comments: [
+      { ...privateDraft, to_patchset_biz_id: "s1", related_patchset: { patchSetBizId: "s1" } },
+    ],
+  });
+  return Effect.gen(function* () {
+    const p = yield* Provider.make;
+    const updated = yield* p.updateReviewDraft({
+      ...input,
+      draftCommentId: "private",
+      body: "Keep my text",
+    });
+    expect(updated).toMatchObject({
+      stale: true,
+      body: "Keep my text",
+      revision: { toPatchSetId: "s1" },
+    });
+    yield* p
+      .submitReview({
+        ...input,
+        verdict: "comment",
+        body: "",
+        comments: [],
+        expectedHeadSha: "head",
+        expectedRevision: draftRevision,
+        draftCommentIds: ["private"],
+      })
+      .pipe(Effect.flip);
+    expect(requests.filter((r) => r.url.endsWith("/review"))).toEqual([]);
+    yield* p.deleteReviewDraft({ ...input, draftCommentId: "private" });
+  }).pipe(Effect.provide(layer));
+});
+it.effect("does not retry uncertain draft creation, edit, deletion or submission", () => {
+  const { layer, requests } = harness({ comments: [privateDraft], failWrite: true });
+  return Effect.gen(function* () {
+    const p = yield* Provider.make;
+    yield* p
+      .createReviewDraft({
+        ...input,
+        path: "new.ts",
+        position: { kind: "added", newLine: 1 },
+        body: "Draft",
+        expectedRevision: draftRevision,
+      })
+      .pipe(Effect.flip);
+    yield* p
+      .updateReviewDraft({ ...input, draftCommentId: "private", body: "Edit" })
+      .pipe(Effect.flip);
+    yield* p.deleteReviewDraft({ ...input, draftCommentId: "private" }).pipe(Effect.flip);
+    yield* p
+      .submitReview({
+        ...input,
+        verdict: "comment",
+        body: "",
+        comments: [],
+        expectedHeadSha: "head",
+        expectedRevision: draftRevision,
+        draftCommentIds: ["private"],
+      })
+      .pipe(Effect.flip);
+    expect(
+      requests.filter((r) => r.method !== "GET" && !r.url.endsWith("/comments/list")),
+    ).toHaveLength(4);
   }).pipe(Effect.provide(layer));
 });

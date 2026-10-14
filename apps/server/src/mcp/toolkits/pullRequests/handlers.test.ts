@@ -233,6 +233,83 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
     Layer.mock(ProjectStore.ProjectStoreV2)({}),
     Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
     Layer.mock(PullRequestService.PullRequestService)({
+      listReviewDrafts: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+          if (options.mutationFails)
+            return yield* new PullRequestOperationError({
+              operation: "listReviewDrafts",
+              detail: "Uncertain write; refresh before retrying.",
+            });
+          return {
+            viewer: "account",
+            drafts: [],
+            revision: {
+              baseSha: "base",
+              headSha: "head",
+              fromPatchSetId: "base-patch",
+              toPatchSetId: "head-patch",
+            },
+          };
+        }),
+      createReviewDraft: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+          if (options.mutationFails)
+            return yield* new PullRequestOperationError({
+              operation: "createReviewDraft",
+              detail: "Uncertain write; refresh before retrying.",
+            });
+          return {
+            id: "draft",
+            body: "Draft",
+            author: null,
+            path: "file.ts",
+            side: "right" as const,
+            line: 1,
+            patchSetId: "head-patch",
+            revision: null,
+            stale: true,
+            canEdit: true,
+            canDelete: true,
+          };
+        }),
+      updateReviewDraft: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+          if (options.mutationFails)
+            return yield* new PullRequestOperationError({
+              operation: "updateReviewDraft",
+              detail: "Uncertain write; refresh before retrying.",
+            });
+          return {
+            id: "draft",
+            body: "Draft",
+            author: null,
+            path: "file.ts",
+            side: "right" as const,
+            line: 1,
+            patchSetId: "head-patch",
+            revision: null,
+            stale: true,
+            canEdit: true,
+            canDelete: true,
+          };
+        }),
+      deleteReviewDraft: (input) =>
+        Effect.gen(function* () {
+          credentialContexts.push(yield* verifiedCredential);
+          managementRequests.push(input);
+          if (options.mutationFails)
+            return yield* new PullRequestOperationError({
+              operation: "deleteReviewDraft",
+              detail: "Uncertain write; refresh before retrying.",
+            });
+          return undefined;
+        }),
       withRoutingCredential: (ref, operation) =>
         Effect.gen(function* () {
           routingRequests.push(ref);
@@ -1011,6 +1088,7 @@ describe("native pull request management access", () => {
   it.effect("guards both review reads and preserves account and pagination", () =>
     Effect.gen(function* () {
       for (const name of [
+        "t3_pull_request_drafts",
         "t3_pull_request_activity",
         "t3_pull_request_reviewer_candidates",
         "t3_pull_request_thread_comments",
@@ -1055,6 +1133,22 @@ describe("native pull request management access", () => {
   );
   const reviewWrites = [
     [
+      "t3_pull_request_create_draft",
+      {
+        path: "file.ts",
+        position: { kind: "added", newLine: 1 },
+        body: "Draft",
+        expectedRevision: {
+          baseSha: "base",
+          headSha: "head",
+          fromPatchSetId: "base-patch",
+          toPatchSetId: "head-patch",
+        },
+      },
+    ],
+    ["t3_pull_request_update_draft", { draftCommentId: "draft", body: "Updated" }],
+    ["t3_pull_request_delete_draft", { draftCommentId: "draft" }],
+    [
       "t3_pull_request_request_reviewers",
       { reviewers: [{ id: "reviewer", kind: "user" }], requested: true },
     ],
@@ -1073,6 +1167,7 @@ describe("native pull request management access", () => {
   ] as const;
   const allManagedTools = [
     ...reviewWrites,
+    ["t3_pull_request_drafts", {}],
     ["t3_pull_request_reviewer_candidates", {}],
     ["t3_pull_request_thread_comments", { threadId: "discussion", cursor: "cursor" }],
     ["t3_pull_request_activity", {}],
@@ -1108,7 +1203,7 @@ describe("native pull request management access", () => {
           ["t3_pull_request_edit", "t3_pull_request_close", "t3_pull_request_reopen"].includes(
             name,
           );
-        expect(harness.managementRequests).toHaveLength(writes ? 2 : 1);
+        expect(harness.managementRequests).toHaveLength(writes && !name.endsWith("_draft") ? 2 : 1);
       }),
   );
   it.effect.each(reviewWrites)(

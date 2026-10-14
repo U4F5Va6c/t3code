@@ -1012,3 +1012,30 @@ index d9dc7b5..3c37bae 100644
      }
    },
    "publishConfig": {
+diff --git a/dist/utils/parsePatchFiles.js b/dist/utils/parsePatchFiles.js
+--- a/dist/utils/parsePatchFiles.js
++++ b/dist/utils/parsePatchFiles.js
+@@ -52,6 +52,7 @@
+ }
+ function _processFile(fileDiffString, { cacheKey, isGitDiff = GIT_DIFF_FILE_BREAK_REGEX.test(fileDiffString), oldFile, newFile, throwOnError = false } = {}) {
+ 	let lastHunkEnd = 0;
++	let hasRenameHeader = false;
+ 	const hunks = splitAtLinePrefix(fileDiffString, "@@ ");
+ 	let currentFile;
+ 	const isPartial = oldFile == null || newFile == null;
+@@ -131,6 +132,7 @@
+ 						if (newObjectId != null) currentFile.newObjectId = detachString(newObjectId);
+ 						if (mode != null) currentFile.mode = detachString(mode);
+ 					}
++					if (line.startsWith("rename from ")) hasRenameHeader = true;
+ 					if (line.startsWith("rename from ") || line.startsWith("copy from ")) currentFile.prevName = detachString(decodeDiffFileName(line.slice(line.startsWith("rename") ? 12 : 10)));
+ 					if (line.startsWith("rename to ") || line.startsWith("copy to ")) currentFile.name = detachString(decodeDiffFileName(line.slice(line.startsWith("rename") ? 10 : 8)));
+ 				}
+@@ -292,6 +294,7 @@
+ 		} else if ((oldFile == null || oldFile.contents === "") && newFile != null && newFile.contents !== "") currentFile.type = "new";
+ 		else if (oldFile != null && oldFile.contents !== "" && (newFile == null || newFile.contents === "")) currentFile.type = "deleted";
+ 	}
++	if (hasRenameHeader && currentFile.type === "change") currentFile.type = currentFile.hunks.length > 0 ? "rename-changed" : "rename-pure";
+ 	if (currentFile.type !== "rename-pure" && currentFile.type !== "rename-changed") currentFile.prevName = void 0;
+ 	realignChangeContentBySimilarity(currentFile);
+ 	return currentFile;

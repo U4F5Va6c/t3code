@@ -96,8 +96,8 @@ Fork 只运行 `codeup-ci.yml` 与 `codeup-sync.yml`。`codeup-integration` 的 
 因此 Mac 客户端连接 Linux environment 时无需在 Mac 重复配置公司 PAT。
 本机 Mac 需要能从应用进程找到凭据入口，见 [Codeup 认证](../user/source-control.md#codeup)。
 用专用测试仓库验收 MR 列表、详情、diff、评论与线程徽标，合并操作也只在测试 MR 上进行。
-本期复用 T3 现有的 MCP 关联、预览与监控链路；不新增 MR CRUD/评审专用 MCP 工具，
-这些平台操作可由客户端执行，agent 仍可使用本机云效 CLI/Skill。
+MR 创建、管理、评审及平台草稿通过原生 T3 MCP 与 Web/桌面共用服务和权限检查。
+目标 environment 必须具备对应平台凭据；Agent 也可使用该环境的云效 CLI/Skill。
 卸载时退出预览应用，再按需移除它的两个独立数据目录；保留原版目录。
 
 ## 暂缓：在自己的 iPhone 安装

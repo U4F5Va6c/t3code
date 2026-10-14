@@ -7904,3 +7904,108 @@ it.effect(
       assert.strictEqual(writes, 1);
     }),
 );
+
+it.effect(
+  "checks persisted draft capabilities and viewer access and forwards the original revision",
+  () =>
+    Effect.gen(function* () {
+      let canComment = false;
+      const calls: unknown[] = [];
+      const revision = {
+        headSha: "head",
+        baseSha: "base",
+        fromPatchSetId: "b1",
+        toPatchSetId: "s2",
+      };
+      const provider = fakeProvider(SourceControlProviderKind.make("codeup"));
+      const service = yield* makeService({
+        projects: [
+          project({
+            id: "p1",
+            title: "Codeup",
+            workspaceRoot: "/a",
+            repository: "org/repo",
+            host: "codeup.aliyun.com",
+            provider: SourceControlProviderKind.make("codeup"),
+          }),
+        ],
+        providers: [
+          {
+            ...provider,
+            capabilities: {
+              ...provider.capabilities,
+              review: { ...provider.capabilities.review, persistedDrafts: true },
+            },
+            getViewerPermissions: () =>
+              Effect.succeed({
+                actions: [],
+                comment: canComment,
+                resolve: false,
+                verdicts: ["comment"],
+                requestReviewers: false,
+              }),
+            createReviewDraft: (input) =>
+              Effect.sync(() => {
+                calls.push(input);
+                return {
+                  id: "draft",
+                  body: input.body,
+                  author: null,
+                  path: input.path,
+                  side: "right" as const,
+                  line: 1,
+                  patchSetId: "s2",
+                  revision,
+                  stale: false,
+                  canEdit: true,
+                  canDelete: true,
+                };
+              }),
+            submitReview: (input) =>
+              Effect.sync(() => {
+                calls.push(input);
+              }),
+          },
+        ],
+      });
+      const ref = {
+        projectId: "p1" as ProjectId,
+        host: "codeup.aliyun.com",
+        repository: "org/repo",
+        number: 1,
+      };
+      const input = {
+        ...ref,
+        path: "file.ts",
+        body: "Draft",
+        position: { kind: "added" as const, newLine: 1 },
+        expectedRevision: revision,
+      };
+      yield* service.createReviewDraft(input).pipe(Effect.flip);
+      assert.deepStrictEqual(calls, []);
+      canComment = true;
+      yield* service.createReviewDraft(input);
+      assert.deepInclude(calls[0], { expectedRevision: revision, cwd: "/a" });
+      yield* service.submitReview({
+        ...ref,
+        verdict: "comment",
+        body: "",
+        comments: [],
+        draftCommentIds: ["draft"],
+        expectedRevision: revision,
+        expectedHeadSha: "head",
+      });
+      assert.deepInclude(calls[1], { draftCommentIds: ["draft"], expectedRevision: revision });
+      yield* service
+        .submitReview({
+          ...ref,
+          verdict: "comment",
+          body: "",
+          comments: [{ path: "file", body: "local", position: { kind: "added", newLine: 1 } }],
+          draftCommentIds: ["draft"],
+          expectedRevision: revision,
+        })
+        .pipe(Effect.flip);
+      assert.strictEqual(calls.length, 2);
+    }),
+);

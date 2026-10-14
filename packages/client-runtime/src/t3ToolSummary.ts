@@ -148,6 +148,18 @@ export function summarizeT3ToolCalls(
     case "t3_pull_request_merge":
       label = phrase("Merged", "merge", `pull request ${times}`);
       break;
+    case "t3_pull_request_drafts":
+      label = phrase("Read", "read", `review draft ${times}`);
+      break;
+    case "t3_pull_request_create_draft":
+      label = phrase("Created", "create", `review draft ${times}`);
+      break;
+    case "t3_pull_request_update_draft":
+      label = phrase("Edited", "edit", `review draft ${times}`);
+      break;
+    case "t3_pull_request_delete_draft":
+      label = phrase("Discarded", "discard", `review draft ${times}`);
+      break;
     case "t3_pull_request_activity":
       label = phrase("Read", "read", `pull request activity ${times}`);
       break;

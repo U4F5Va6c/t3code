@@ -18,6 +18,10 @@ export type T3McpToolSummaryAction =
   | "t3_pull_request_reply"
   | "t3_pull_request_set_thread_resolved"
   | "t3_pull_request_merge"
+  | "t3_pull_request_drafts"
+  | "t3_pull_request_create_draft"
+  | "t3_pull_request_update_draft"
+  | "t3_pull_request_delete_draft"
   | "t3_pull_request_activity"
   | "t3_pull_request_detail"
   | "t3_pull_request_diff"
@@ -153,6 +157,22 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_pull_request_merge: tool(
     ["Merge", "Merging", "Merged", "pull request"],
     "t3_pull_request_merge",
+  ),
+  t3_pull_request_drafts: tool(
+    ["Read", "Reading", "Read", "review draft"],
+    "t3_pull_request_drafts",
+  ),
+  t3_pull_request_create_draft: tool(
+    ["Create", "Creating", "Created", "review draft"],
+    "t3_pull_request_create_draft",
+  ),
+  t3_pull_request_update_draft: tool(
+    ["Edit", "Editing", "Edited", "review draft"],
+    "t3_pull_request_update_draft",
+  ),
+  t3_pull_request_delete_draft: tool(
+    ["Discard", "Discarding", "Discarded", "review draft"],
+    "t3_pull_request_delete_draft",
   ),
   t3_pull_request_activity: tool(
     ["Read", "Reading", "Read", "pull request activity"],

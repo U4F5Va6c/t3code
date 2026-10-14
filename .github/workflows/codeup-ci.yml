@@ -94,6 +94,12 @@ jobs:
           vp test run
           apps/server/src/pullRequest/PullRequestService.test.ts
           apps/server/src/pullRequest/PullRequestReviewGuideService.test.ts
+          apps/server/src/mcp/toolkits/pullRequests/handlers.test.ts
+          apps/server/src/mcp/toolkits/core.test.ts
+          apps/server/src/mcp/McpHttpServer.test.ts
+          apps/server/src/auth/RpcAuthorization.test.ts
+          apps/web/src/components/pullRequest/usePullRequestReviewDrafts.test.ts
+          apps/web/src/lib/diffRendering.test.ts
           apps/web/src/components/pullRequest/pullRequestList.logic.test.ts
           apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
           apps/web/src/components/pullRequest/pullRequestEditing.logic.test.ts

@@ -10,6 +10,7 @@ import {
   getRenderablePatch,
   resolveFileDiffPath,
   resolveFileDiffPreviousPath,
+  resolveFileDiffReviewPaths,
 } from "./diffRendering";
 
 describe("buildPatchCacheKey", () => {
@@ -36,6 +37,74 @@ describe("buildPatchCacheKey", () => {
 });
 
 describe("getRenderablePatch", () => {
+  it.each([false, true])(
+    "preserves quoted rename paths without similarity metadata (changed=%s)",
+    (changed) => {
+      const parsed = getRenderablePatch(
+        [
+          'diff --git "a/old\\tname.ts" "b/new\\tname.ts"',
+          'rename from "old\\tname.ts"',
+          'rename to "new\\tname.ts"',
+          ...(changed
+            ? ['--- "a/old\\tname.ts"', '+++ "b/new\\tname.ts"', "@@ -1 +1 @@", "-before", "+after"]
+            : []),
+        ].join("\n"),
+        "quoted-rename",
+        { ignoreWhitespace: true, compactPartialHunkOffsets: true },
+      );
+      expect(parsed?.kind).toBe("files");
+      if (parsed?.kind !== "files") return;
+      expect(parsed.files[0]?.type).toBe(changed ? "rename-changed" : "rename-pure");
+      expect(resolveFileDiffReviewPaths(parsed.files[0]!)).toEqual({
+        path: "new\tname.ts",
+        oldPath: "old\tname.ts",
+      });
+    },
+  );
+
+  it("anchors both renamed sides when the platform omits similarity metadata", () => {
+    const parsed = getRenderablePatch(
+      [
+        "diff --git a/README.md b/README-renamed.md",
+        "rename from README.md",
+        "rename to README-renamed.md",
+        "index 46faad264358406451f5ccc672734eb6ab06c07b..1e067bd79b84db421a9be8bc11d0be592562f5e7",
+        "--- a/README.md",
+        "+++ b/README-renamed.md",
+        "@@ -1,3 +1,5 @@",
+        " # Codeup acceptance sandbox",
+        " ",
+        " Isolated test repository for T3 Code Source Control.",
+        "+",
+        "+Draft",
+      ].join("\n"),
+      "review",
+      { ignoreWhitespace: true, compactPartialHunkOffsets: true },
+    );
+    expect(parsed?.kind).toBe("files");
+    if (parsed?.kind !== "files") return;
+    const source = parsed.sourceFiles[0]!;
+    const display = parsed.files[0]!;
+    expect(display.type).toBe("rename-changed");
+    for (const [line, side, position] of [
+      [1, "deletions", { kind: "context", oldLine: 1, newLine: 1, side: "left" }],
+      [5, "additions", { kind: "added", newLine: 5 }],
+    ] as const) {
+      expect({
+        ...resolveFileDiffReviewPaths(display, source),
+        position: resolveDiffReviewPosition(source, line, side),
+      }).toEqual({ path: "README-renamed.md", oldPath: "README.md", position });
+    }
+    expect(resolveFileDiffReviewPaths(source)).toEqual({
+      path: "README-renamed.md",
+      oldPath: "README.md",
+    });
+    expect(resolveFileDiffReviewPaths(display)).toEqual({
+      path: "README-renamed.md",
+      oldPath: "README.md",
+    });
+  });
+
   it("hides indentation changes around inserted JSX without moving review lines", () => {
     const patch = [
       "diff --git a/item.tsx b/item.tsx",
