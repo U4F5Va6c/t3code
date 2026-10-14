@@ -168,7 +168,10 @@ const legacyParents: Partial<Record<AuthEnvironmentScope, AuthEnvironmentScope>>
 /** Keep permission denials decodable by clients with the original scope enum. */
 export function authScopeRequiredResponse(requiredPermission: AuthEnvironmentScope) {
   return {
-    requiredScope: legacyParents[requiredPermission] ?? requiredPermission,
+    requiredScope:
+      requiredPermission === AuthWorkItemsWriteScope
+        ? AuthOrchestrationOperateScope
+        : (legacyParents[requiredPermission] ?? requiredPermission),
     requiredPermission,
   };
 }
