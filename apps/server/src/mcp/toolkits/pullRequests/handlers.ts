@@ -1,9 +1,12 @@
+import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
 import {
   threadPullRequestsOf,
   threadPullRequestKeysEqual,
 } from "@t3tools/shared/threadPullRequests";
 import {
   CommandId,
+  OrchestratorMcpFailure,
+  WS_METHODS,
   pullRequestHostOf,
   type OrchestrationProjectShell,
   type OrchestrationV2ThreadShell,
@@ -24,6 +27,10 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
+import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
+import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
+import * as HostAccess from "../sourceControl/access.ts";
+import { assertTargetWithinLimits, loadCaller } from "../../threadAccess.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
@@ -31,6 +38,8 @@ import { pullRequestSyncKey } from "../../../pullRequest/pullRequestSyncKey.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import {
+  ManagedPullRequestTarget,
+  ManagedGitInput,
   type ListThreadPullRequestsResult,
   PullRequestLinkFailedError,
   PullRequestUrlInvalidError,
@@ -97,18 +106,23 @@ const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(function* (
     return yield* new PullRequestHostRequiredError({});
   }
   const repository = input.repository.toLowerCase();
-  const url =
-    changeRequestUrlFor(
-      // The project's kind only describes its own host; another host gets no URL guess.
-      host === projectHost.host ? projectHost.kind : null,
-      host,
-      repository,
-      input.number,
-      project?.repositoryIdentity?.locator.remoteUrl,
-    ) ?? `https://${host}/${repository}/pull/${input.number}`;
+  const url = changeRequestUrlFor(
+    // The project's kind only describes its own host; another host gets no URL guess.
+    host === projectHost.host ? projectHost.kind : null,
+    host,
+    repository,
+    input.number,
+    project?.repositoryIdentity?.locator.remoteUrl,
+  );
+  const resolvedUrl =
+    url ??
+    (projectHost.kind !== "codeup" && host !== "codeup.aliyun.com"
+      ? `https://${host}/${repository}/pull/${input.number}`
+      : null);
+  if (resolvedUrl === null) return yield* new PullRequestHostRequiredError({});
   return {
-    ...normalizeThreadPullRequestKey({ host, repository, number: input.number, url }),
-    url,
+    ...normalizeThreadPullRequestKey({ host, repository, number: input.number, url: resolvedUrl }),
+    url: resolvedUrl,
   } satisfies ResolvedTarget;
 });
 
@@ -364,7 +378,280 @@ const make = Effect.gen(function* () {
     handle: (params: P) => Effect.Effect<A, E, R>,
   ) => McpToolAccess.writesThreads((params: P) => [params.threadId], handle);
 
+  const managedReference = Effect.fn("PullRequestsToolkit.managedReference")(function* (
+    input: typeof ManagedPullRequestTarget.Type,
+    method: string,
+    write = false,
+  ) {
+    yield* HostAccess.access(method, write, "pull-requests");
+    const stored = yield* HostAccess.project(input.projectId);
+    const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+    const project =
+      stored.repositoryIdentity == null
+        ? { ...stored, repositoryIdentity: yield* resolver.resolve(stored.workspaceRoot) }
+        : stored;
+    const target = yield* resolveTarget(input, project);
+    if (
+      projectForPullRequest([project], target, project) === undefined ||
+      (input.repository !== undefined && input.repository.toLowerCase() !== target.repository) ||
+      (input.host !== undefined && input.host.toLowerCase() !== target.host) ||
+      (input.number !== undefined && input.number !== target.number)
+    )
+      return yield* new OrchestratorMcpFailure({
+        code: "invalid_request",
+        message: "Pull request identity does not match this project's repository and host.",
+      });
+    return {
+      projectId: project.id,
+      host: target.host,
+      repository: target.repository,
+      number: target.number,
+      ...(input.expectedAccountId === undefined
+        ? {}
+        : { expectedAccountId: input.expectedAccountId }),
+    };
+  });
+  const changeState = Effect.fn("PullRequestsToolkit.changeState")(function* (
+    input: typeof ManagedPullRequestTarget.Type,
+    action: "close" | "reopen",
+  ) {
+    const ref = yield* managedReference(input, WS_METHODS.pullRequestsRunAction, true);
+    const service = yield* PullRequestService.PullRequestService;
+    return yield* service.withRoutingCredential(
+      ref,
+      Effect.gen(function* () {
+        yield* service.runAction({ ...ref, action });
+        return yield* service.detail(ref);
+      }),
+    );
+  });
+  const gitAction = Effect.fn("PullRequestsToolkit.gitAction")(function* (
+    input: typeof ManagedGitInput.Type,
+    action: "create_pr" | "push",
+  ) {
+    yield* HostAccess.access(WS_METHODS.gitRunStackedAction, true, "pull-requests");
+    const project = yield* HostAccess.project(input.projectId);
+    let cwd = project.workspaceRoot;
+    if (input.threadId !== undefined) {
+      const thread = yield* requireThread(PullRequestLinkFailedError, input.threadId);
+      if (thread.projectId !== project.id)
+        return yield* new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: "Thread belongs to another project.",
+        });
+      const caller = yield* loadCaller();
+      yield* assertTargetWithinLimits(caller.limits, thread);
+      cwd = thread.worktreePath ?? cwd;
+    }
+    const workflow = yield* GitWorkflowService.GitWorkflowService;
+    return yield* workflow.runStackedActionAndRefresh({
+      ...input,
+      cwd,
+      action,
+      actionId: yield* crypto.randomUUIDv4.pipe(Effect.orDie),
+    });
+  });
+
   return {
+    t3_pull_request_reviewer_candidates: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(
+          input,
+          WS_METHODS.pullRequestsReviewerCandidates,
+          false,
+        );
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          service.reviewerCandidates({ ...input, ...ref }),
+        );
+      }),
+    ),
+    t3_pull_request_request_reviewers: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsRequestReviewers, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.requestReviewers({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_submit_review: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsSubmitReview, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.submitReview({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_comment: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsComment, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.comment({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_update_comment: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsUpdateComment, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.updateComment({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_thread_comments: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsThreadComments, false);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          service.threadComments({ ...input, ...ref }),
+        );
+      }),
+    ),
+    t3_pull_request_reply: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsReplyToThread, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.replyToThread({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_set_thread_resolved: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(
+          input,
+          WS_METHODS.pullRequestsSetThreadResolution,
+          true,
+        );
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.setThreadResolution({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_merge: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsRunAction, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.runAction({ ...input, ...ref, action: "merge" });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_requests: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        yield* HostAccess.access(WS_METHODS.pullRequestsList, false, "pull-requests");
+        yield* HostAccess.project(input.projectId);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.list({ ...input, projectIds: [input.projectId] });
+      }),
+    ),
+    t3_pull_request_activity: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsActivity);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.invalidate({ reference: ref });
+            return yield* service.activity(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_detail: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsDetail);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.invalidate({ reference: ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_diff: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsDiffFileContents);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.invalidate({ reference: ref });
+            return yield* service.diff({ ...input, ...ref });
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_file_contents: McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsDiffFileContents);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          service.diffFileContents({ ...input, ...ref }),
+        );
+      }),
+    ),
+    t3_pull_request_edit: McpToolAccess.writesWithCapability((input) =>
+      Effect.gen(function* () {
+        const ref = yield* managedReference(input, WS_METHODS.pullRequestsUpdate, true);
+        const service = yield* PullRequestService.PullRequestService;
+        return yield* service.withRoutingCredential(
+          ref,
+          Effect.gen(function* () {
+            yield* service.update({ ...input, ...ref });
+            return yield* service.detail(ref);
+          }),
+        );
+      }),
+    ),
+    t3_pull_request_close: McpToolAccess.writesWithCapability((input) =>
+      changeState(input, "close"),
+    ),
+    t3_pull_request_reopen: McpToolAccess.writesWithCapability((input) =>
+      changeState(input, "reopen"),
+    ),
+    t3_pull_request_create: McpToolAccess.writesWithCapability((input) =>
+      gitAction(input, "create_pr"),
+    ),
+    t3_git_push: McpToolAccess.writesWithCapability((input) => gitAction(input, "push")),
     link_pull_request: writesThread((input) =>
       Effect.gen(function* () {
         const thread = yield* requireThread(PullRequestLinkFailedError, input.threadId);

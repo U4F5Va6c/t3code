@@ -8,6 +8,8 @@ import {
   ChatImageAttachment,
   CommandId,
   EnvironmentId,
+  ProjectId,
+  SourceControlProviderKind,
   NodeId,
   OrchestratorMcpThreadReadResult,
   ProviderDriverKind,
@@ -38,6 +40,8 @@ import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapter
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSearch from "../../orchestration-v2/ThreadSearch.ts";
 import * as PreviewBrowser from "../../preview/PreviewBrowser.ts";
+import * as SourceControlRepositoryService from "../../sourceControl/SourceControlRepositoryService.ts";
+import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
@@ -50,6 +54,7 @@ import { dispatchFailure } from "../threadAccess.ts";
 import { OrchestratorToolkit } from "./orchestrator/tools.ts";
 import { PreviewToolkit } from "./preview/tools.ts";
 import { PreviewControlsToolkit } from "./previewControls/tools.ts";
+import { SourceControlToolkit } from "./sourceControl/tools.ts";
 import { EnvironmentToolkit } from "./environment/tools.ts";
 import * as EnvironmentHandlers from "./environment/handlers.ts";
 import { ProjectToolkit } from "./project/tools.ts";
@@ -93,6 +98,7 @@ it("publishes unique tool names with reference-free object-root inputs", () => {
     AttachmentToolkit,
     ProjectToolkit,
     EnvironmentToolkit,
+    SourceControlToolkit,
     PreviewControlsToolkit,
     DeviceToolkit,
     PullRequestsToolkit,
@@ -879,3 +885,153 @@ it.effect("only the caller that prepared a pending upload can discard it", () =>
     ),
   ),
 );
+
+it.effect("repository MCP uses the shared service only for the granted environment", () => {
+  const calls: unknown[] = [];
+  const input = {
+    provider: "codeup",
+    apiHost: "openapi-rdc.aliyuncs.com",
+    organizationId: "org-a",
+    page: 2,
+    perPage: 20,
+  };
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const call = (invocation: McpInvocationContext.McpInvocationScope) =>
+      server
+        .callTool({ name: "t3_source_control_repositories", arguments: input })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+    expect(declaredFailure(yield* call({ ...scope, capabilities: new Set() }))).toMatchObject({
+      code: "capability_denied",
+    });
+    expect(
+      declaredFailure(
+        yield* call({ ...scope, environmentId: EnvironmentId.make("another-environment") }),
+      ),
+    ).toMatchObject({ code: "capability_denied" });
+    expect(calls).toEqual([]);
+    const allowed = yield* call(scope);
+    expect(allowed.isError).toBe(false);
+    expect(allowed.structuredContent).toEqual({ repositories: [], nextPage: null });
+    expect(calls).toEqual([input]);
+  }).pipe(
+    Effect.provide(
+      McpHttpServer.layerSourceControlToolkit.pipe(
+        Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
+        Layer.provide(
+          Layer.mock(ServerEnvironment.ServerEnvironment)({
+            getEnvironmentId: Effect.succeed(scope.environmentId),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
+            listRepositories: (request) => {
+              calls.push(request);
+              return Effect.succeed({ repositories: [], nextPage: null });
+            },
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+it.effect("lookup uses read scope and publication requires the actual write grant", () => {
+  const calls: unknown[] = [];
+  const projectId = ProjectId.make("repository-project");
+  const repository = {
+    provider: SourceControlProviderKind.make("codeup"),
+    nameWithOwner: "org/repo",
+    url: "https://codeup.aliyun.com/org/repo",
+    sshUrl: "git@codeup.aliyun.com:org/repo.git",
+  };
+  const input = { projectId, provider: "codeup", repository: "org/repo" };
+  const invoke = (
+    access: "read-only" | "full-access",
+    scopes: ReadonlyArray<"orchestration:read" | "source-control:write">,
+  ): McpInvocationContext.McpInvocationScope => ({
+    ...scope,
+    thread: undefined,
+    client: { sessionId: "test-client", label: "Test", access, scopes },
+  });
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const call = (name: string, invocation: McpInvocationContext.McpInvocationScope) =>
+      server
+        .callTool({ name, arguments: { ...input, visibility: "private" } })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+    expect(
+      (yield* call("t3_source_control_publish", invoke("full-access", ["orchestration:read"])))
+        .isError,
+    ).toBe(true);
+    expect(calls).toEqual([]);
+    expect(
+      (yield* call("t3_source_control_lookup", invoke("read-only", ["orchestration:read"])))
+        .isError,
+    ).toBe(false);
+    expect(
+      (yield* call("t3_source_control_publish", invoke("full-access", ["source-control:write"])))
+        .isError,
+    ).toBe(false);
+    expect(calls).toHaveLength(2);
+    for (const request of calls)
+      expect(request).toMatchObject({ cwd: "/validated/project", repository: "org/repo" });
+  }).pipe(
+    Effect.provide(
+      McpHttpServer.layerSourceControlToolkit.pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
+        Layer.provide(
+          Layer.mock(ServerEnvironment.ServerEnvironment)({
+            getEnvironmentId: Effect.succeed(scope.environmentId),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(ProjectService.ProjectService)({
+            getShell: () =>
+              Effect.succeedSome({
+                id: projectId,
+                title: "Test",
+                workspaceRoot: "/validated/project",
+                defaultModelSelection: null,
+                scripts: [],
+                repositoryIdentity: null,
+                createdAt: "2026-10-14T00:00:00Z",
+                updatedAt: "2026-10-14T00:00:00Z",
+              }),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
+            lookupRepository: (request) =>
+              Effect.sync(() => {
+                calls.push(request);
+                return repository;
+              }),
+            publishRepository: (request) =>
+              Effect.sync(() => {
+                calls.push(request);
+                return {
+                  repository,
+                  remoteName: "origin",
+                  remoteUrl: repository.sshUrl,
+                  branch: "main",
+                  status: "remote_added" as const,
+                };
+              }),
+          }),
+        ),
+      ),
+    ),
+  );
+});

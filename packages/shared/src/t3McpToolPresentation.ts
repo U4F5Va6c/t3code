@@ -6,6 +6,27 @@ export interface T3McpToolPresentation {
 }
 
 export type T3McpToolSummaryAction =
+  | "t3_source_control_publish"
+  | "t3_source_control_lookup"
+  | "t3_pull_requests"
+  | "t3_pull_request_reviewer_candidates"
+  | "t3_pull_request_request_reviewers"
+  | "t3_pull_request_submit_review"
+  | "t3_pull_request_comment"
+  | "t3_pull_request_update_comment"
+  | "t3_pull_request_thread_comments"
+  | "t3_pull_request_reply"
+  | "t3_pull_request_set_thread_resolved"
+  | "t3_pull_request_merge"
+  | "t3_pull_request_activity"
+  | "t3_pull_request_detail"
+  | "t3_pull_request_diff"
+  | "t3_pull_request_file_contents"
+  | "t3_pull_request_edit"
+  | "t3_pull_request_close"
+  | "t3_pull_request_reopen"
+  | "t3_pull_request_create"
+  | "t3_git_push"
   | "capabilities"
   | "delegate"
   | "task-status"
@@ -43,6 +64,8 @@ export type T3McpToolSummaryAction =
   | "worktree-handoff"
   | "worktree-list"
   | "worktree-status"
+  | "source-control-repositories"
+  | "source-control-branches"
   | "project-list"
   | "project-read"
   | "project-create"
@@ -86,6 +109,89 @@ const T3_MCP_SERVER_ALIASES = new Set(["t3-code", "t3_code", "t3code"]);
 
 // Cards, activity rows, summaries, and provider identity recovery share this inventory.
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
+  t3_source_control_publish: tool(
+    ["Publish", "Publishing", "Published", "repository"],
+    "t3_source_control_publish",
+  ),
+  t3_source_control_lookup: tool(
+    ["Look up", "Looking up", "Looked up", "repository"],
+    "t3_source_control_lookup",
+  ),
+  t3_pull_requests: tool(["List", "Listing", "Listed", "pull requests"], "t3_pull_requests"),
+  t3_pull_request_reviewer_candidates: tool(
+    ["List", "Listing", "Listed", "reviewer candidates"],
+    "t3_pull_request_reviewer_candidates",
+  ),
+  t3_pull_request_request_reviewers: tool(
+    ["Update", "Updating", "Updated", "reviewer requests"],
+    "t3_pull_request_request_reviewers",
+  ),
+  t3_pull_request_submit_review: tool(
+    ["Submit", "Submitting", "Submitted", "review"],
+    "t3_pull_request_submit_review",
+  ),
+  t3_pull_request_comment: tool(
+    ["Post", "Posting", "Posted", "comment"],
+    "t3_pull_request_comment",
+  ),
+  t3_pull_request_update_comment: tool(
+    ["Update", "Updating", "Updated", "comment"],
+    "t3_pull_request_update_comment",
+  ),
+  t3_pull_request_thread_comments: tool(
+    ["Read", "Reading", "Read", "discussion"],
+    "t3_pull_request_thread_comments",
+  ),
+  t3_pull_request_reply: tool(
+    ["Reply to", "Replying to", "Replied to", "discussion"],
+    "t3_pull_request_reply",
+  ),
+  t3_pull_request_set_thread_resolved: tool(
+    ["Update", "Updating", "Updated", "discussion resolution"],
+    "t3_pull_request_set_thread_resolved",
+  ),
+  t3_pull_request_merge: tool(
+    ["Merge", "Merging", "Merged", "pull request"],
+    "t3_pull_request_merge",
+  ),
+  t3_pull_request_activity: tool(
+    ["Read", "Reading", "Read", "pull request activity"],
+    "t3_pull_request_activity",
+  ),
+  t3_pull_request_detail: tool(
+    ["Read", "Reading", "Read", "pull request"],
+    "t3_pull_request_detail",
+  ),
+  t3_pull_request_diff: tool(
+    ["Read", "Reading", "Read", "pull request diff"],
+    "t3_pull_request_diff",
+  ),
+  t3_pull_request_file_contents: tool(
+    ["Read", "Reading", "Read", "pull request file"],
+    "t3_pull_request_file_contents",
+  ),
+  t3_pull_request_edit: tool(["Edit", "Editing", "Edited", "pull request"], "t3_pull_request_edit"),
+  t3_pull_request_close: tool(
+    ["Close", "Closing", "Closed", "pull request"],
+    "t3_pull_request_close",
+  ),
+  t3_pull_request_reopen: tool(
+    ["Reopen", "Reopening", "Reopened", "pull request"],
+    "t3_pull_request_reopen",
+  ),
+  t3_pull_request_create: tool(
+    ["Create", "Creating", "Created", "pull request"],
+    "t3_pull_request_create",
+  ),
+  t3_git_push: tool(["Push", "Pushing", "Pushed", "branch"], "t3_git_push"),
+  t3_source_control_repositories: tool(
+    ["Browse", "Browsing", "Browsed", "repositories"],
+    "source-control-repositories",
+  ),
+  t3_source_control_branches: tool(
+    ["Read", "Reading", "Read", "repository branches"],
+    "source-control-branches",
+  ),
   link_pull_request: tool(
     ["Link", "Linking", "Linked", "a pull request"],
     "link-pr",

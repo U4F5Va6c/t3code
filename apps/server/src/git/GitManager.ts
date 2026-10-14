@@ -2313,6 +2313,12 @@ export const make = Effect.gen(function* () {
 
     const created = yield* findOpenPr(cwd, headContext);
     if (!created) {
+      if (provider.kind === "codeup")
+        return yield* new GitManagerError({
+          operation: "runPrStep",
+          cwd,
+          detail: "Codeup has not confirmed the created merge request. Refresh before retrying.",
+        });
       return {
         status: "created" as const,
         baseBranch,

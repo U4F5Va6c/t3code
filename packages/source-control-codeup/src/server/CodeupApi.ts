@@ -1,4 +1,13 @@
-import { PositiveInt, TrimmedNonEmptyString, TrimmedString } from "@t3tools/contracts";
+import {
+  type SourceControlRepositoryDirectoryInput,
+  type SourceControlRepositoryDirectoryResult,
+  type SourceControlRepositoryBranchesInput,
+  type SourceControlRepositoryBranchesResult,
+  SourceControlProviderKind,
+  PositiveInt,
+  TrimmedNonEmptyString,
+  TrimmedString,
+} from "@t3tools/contracts";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import { readSourceControlHostSettings } from "@t3tools/source-control-core/client/definition";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
@@ -26,15 +35,32 @@ const Repository = Schema.Struct({
   accessLevel: Schema.optional(
     Schema.NullOr(Schema.Union([Schema.Number, Schema.NumberFromString])),
   ),
+  visibility: Schema.optional(Schema.Literals(["private", "internal", "public"])),
   archived: Schema.optional(Schema.Boolean),
   defaultBranch: Schema.optional(Schema.NullOr(TrimmedString)),
 });
 const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 
+const httpFailure = (status: number | null) =>
+  new CodeupApiError({
+    status,
+    reason:
+      status === 401
+        ? "unauthenticated"
+        : status === 403
+          ? "forbidden"
+          : status === 404
+            ? "not-found"
+            : status === 429
+              ? "rate-limited"
+              : "unavailable",
+  });
+
 export class CodeupApiError extends Schema.TaggedError<CodeupApiError>()("CodeupApiError", {
   reason: Schema.Literals([
     "not-configured",
     "invalid-repository",
+    "unsupported-host",
     "unauthenticated",
     "forbidden",
     "not-found",
@@ -49,6 +75,8 @@ export class CodeupApiError extends Schema.TaggedError<CodeupApiError>()("Codeup
     switch (this.reason) {
       case "not-configured":
         return "Sign in through aliyun-devops on this environment, set the Yunxiao token and organization environment variables, or add an organization token in Source Control settings.";
+      case "unsupported-host":
+        return "Repository browsing supports Codeup Central Edition at openapi-rdc.aliyuncs.com only.";
       case "invalid-repository":
         return "Use a Codeup Central Edition repository URL or full path beginning with its organization ID.";
       case "unauthenticated":
@@ -78,6 +106,12 @@ export interface CodeupRequest {
 export class CodeupApi extends Context.Service<
   CodeupApi,
   {
+    readonly listRepositories: (
+      input: SourceControlRepositoryDirectoryInput,
+    ) => Effect.Effect<SourceControlRepositoryDirectoryResult, CodeupApiError>;
+    readonly listBranches: (
+      input: SourceControlRepositoryBranchesInput,
+    ) => Effect.Effect<SourceControlRepositoryBranchesResult, CodeupApiError>;
     readonly request: (input: CodeupRequest) => Effect.Effect<unknown, CodeupApiError>;
     readonly getRepository: (
       repository: string,
@@ -168,6 +202,7 @@ const make = Effect.gen(function* () {
           spawnCwd: workingDirectory,
           timeoutMs: 30_000,
           maxOutputBytes: 8 * 1024 * 1024,
+          allowNonZeroExit: true,
           env: { ALIBABA_CLOUD_YUNXIAO_API_BASE_URL: CODEUP_API_HOST },
         });
       const result = yield* run("aliyun-devops", []).pipe(
@@ -187,8 +222,17 @@ const make = Effect.gen(function* () {
             }),
         ),
       );
-      if (result.exitCode !== 0 || result.stdoutTruncated || result.stdoutInvalidUtf8)
-        return yield* new CodeupApiError({ reason: "unavailable", status: null });
+      if (result.stdoutTruncated || result.stdoutInvalidUtf8) return yield* httpFailure(null);
+      if (result.exitCode !== 0) {
+        // Only an explicit SDK HTTP status can authorize creating after a failed lookup.
+        const status =
+          !result.stderrTruncated && !result.stderrInvalidUtf8
+            ? result.stderr.match(
+                /\bSDKError:\r?\n[ \t]+StatusCode:[ \t]+([45]\d{2})[ \t]*\r?$/mu,
+              )?.[1]
+            : undefined;
+        return yield* httpFailure(status === undefined ? null : Number(status));
+      }
       return yield* decodeJson(result.stdout.trim() || "null").pipe(
         Effect.mapError(
           (cause) =>
@@ -226,19 +270,7 @@ const make = Effect.gen(function* () {
         ),
       );
     if (response.status < 200 || response.status >= 300) {
-      return yield* new CodeupApiError({
-        status: response.status,
-        reason:
-          response.status === 401
-            ? "unauthenticated"
-            : response.status === 403
-              ? "forbidden"
-              : response.status === 404
-                ? "not-found"
-                : response.status === 429
-                  ? "rate-limited"
-                  : "unavailable",
-      });
+      return yield* httpFailure(response.status);
     }
     const body = yield* collectUint8StreamText({
       stream: response.stream,
@@ -268,40 +300,140 @@ const make = Effect.gen(function* () {
     );
   }, Effect.scoped);
 
+  const getRepository = Effect.fn("CodeupApi.getRepository")(function* (input: string) {
+    const target = parseCodeupRepository(input);
+    if (!target) return yield* new CodeupApiError({ reason: "invalid-repository", status: null });
+    const repository = yield* request({
+      operation: "GetRepository",
+      organizationId: target.organizationId,
+      params: { repositoryId: target.repository },
+    }).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Repository)),
+      Effect.mapError((cause) =>
+        cause._tag === "CodeupApiError"
+          ? cause
+          : new CodeupApiError({
+              reason: "invalid-response",
+              status: null,
+              cause: Redacted.make(cause),
+            }),
+      ),
+    );
+    // Never use a response for another organization/path, or hand Git an unrelated clone URL.
+    if (
+      repository.pathWithNamespace.toLowerCase() !== target.repository.toLowerCase() ||
+      [repository.webUrl, repository.sshUrlToRepo, repository.httpUrlToRepo].some(
+        (url) =>
+          parseCodeupRepository(url)?.repository.toLowerCase() !== target.repository.toLowerCase(),
+      ) ||
+      !repository.webUrl.startsWith(`https://${CODEUP_HOST}/`)
+    ) {
+      return yield* new CodeupApiError({ reason: "invalid-response", status: null });
+    }
+    return repository;
+  });
+  const validateDirectory = (input: SourceControlRepositoryDirectoryInput) =>
+    input.apiHost !== CODEUP_API_HOST
+      ? Effect.fail(new CodeupApiError({ reason: "unsupported-host", status: null }))
+      : /^[a-zA-Z0-9_-]+$/u.test(input.organizationId) &&
+          Number.isSafeInteger(input.page) &&
+          input.page >= 1 &&
+          Number.isSafeInteger(input.perPage) &&
+          input.perPage >= 1 &&
+          input.perPage <= 100
+        ? Effect.void
+        : Effect.fail(new CodeupApiError({ reason: "invalid-repository", status: null }));
+  const directoryRepository = (organizationId: string, repo: typeof Repository.Type) => ({
+    provider: SourceControlProviderKind.make("codeup"),
+    apiHost: CODEUP_API_HOST,
+    organizationId,
+    repositoryId: String(repo.id),
+    nameWithOwner: repo.pathWithNamespace,
+    webUrl: repo.webUrl,
+    url: repo.httpUrlToRepo,
+    sshUrl: repo.sshUrlToRepo,
+    defaultBranch: repo.defaultBranch || null,
+  });
+  const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S) =>
+    Effect.flatMap((value: unknown) =>
+      Schema.decodeUnknownEffect(schema)(value).pipe(
+        Effect.mapError(
+          (cause) =>
+            new CodeupApiError({
+              reason: "invalid-response",
+              status: null,
+              cause: Redacted.make(cause),
+            }),
+        ),
+      ),
+    );
   return CodeupApi.of({
     request,
-    getRepository: Effect.fn("CodeupApi.getRepository")(function* (input) {
-      const target = parseCodeupRepository(input);
-      if (!target) return yield* new CodeupApiError({ reason: "invalid-repository", status: null });
-      const repository = yield* request({
-        operation: "GetRepository",
-        organizationId: target.organizationId,
-        params: { repositoryId: target.repository },
+    getRepository,
+    listRepositories: Effect.fn("CodeupApi.listRepositories")(function* (input) {
+      yield* validateDirectory(input);
+      const repositories = yield* request({
+        operation: "ListRepositories",
+        organizationId: input.organizationId,
+        query: {
+          page: input.page,
+          perPage: input.perPage,
+          ...(input.search ? { search: input.search } : {}),
+        },
+      }).pipe(decode(Schema.Array(Repository)));
+      for (const repo of repositories) {
+        const parsed = parseCodeupRepository(repo.pathWithNamespace);
+        if (
+          parsed?.organizationId !== input.organizationId ||
+          !repo.webUrl.startsWith(`https://${CODEUP_HOST}/`) ||
+          [repo.webUrl, repo.httpUrlToRepo, repo.sshUrlToRepo].some(
+            (url) => parseCodeupRepository(url)?.repository !== repo.pathWithNamespace,
+          )
+        )
+          return yield* new CodeupApiError({ reason: "invalid-response", status: null });
+      }
+      // shortcut: request discards pagination headers; a full page may lead to one final empty page until headers are exposed.
+      return {
+        repositories: repositories.map((repo) => directoryRepository(input.organizationId, repo)),
+        nextPage: repositories.length === input.perPage ? input.page + 1 : null,
+      };
+    }),
+    listBranches: Effect.fn("CodeupApi.listBranches")(function* (input) {
+      yield* validateDirectory(input);
+      if (parseCodeupRepository(input.repository)?.organizationId !== input.organizationId)
+        return yield* new CodeupApiError({ reason: "invalid-repository", status: null });
+      const repo = yield* getRepository(input.repository);
+      if (String(repo.id) !== input.repositoryId)
+        return yield* new CodeupApiError({ reason: "invalid-repository", status: null });
+      const branches = yield* request({
+        operation: "ListBranches",
+        organizationId: input.organizationId,
+        params: { repositoryId: repo.id },
+        query: {
+          page: input.page,
+          perPage: input.perPage,
+          ...(input.search ? { search: input.search } : {}),
+        },
       }).pipe(
-        Effect.flatMap(Schema.decodeUnknownEffect(Repository)),
-        Effect.mapError((cause) =>
-          cause._tag === "CodeupApiError"
-            ? cause
-            : new CodeupApiError({
-                reason: "invalid-response",
-                status: null,
-                cause: Redacted.make(cause),
-              }),
+        decode(
+          Schema.Array(
+            Schema.Struct({
+              name: TrimmedNonEmptyString,
+              commit: Schema.Struct({ id: TrimmedNonEmptyString }),
+              protected: Schema.Boolean,
+            }),
+          ),
         ),
       );
-      // Never use a response for another organization/path, or hand Git an unrelated clone URL.
-      if (
-        repository.pathWithNamespace.toLowerCase() !== target.repository.toLowerCase() ||
-        [repository.webUrl, repository.sshUrlToRepo, repository.httpUrlToRepo].some(
-          (url) =>
-            parseCodeupRepository(url)?.repository.toLowerCase() !==
-            target.repository.toLowerCase(),
-        ) ||
-        !repository.webUrl.startsWith(`https://${CODEUP_HOST}/`)
-      ) {
-        return yield* new CodeupApiError({ reason: "invalid-response", status: null });
-      }
-      return repository;
+      return {
+        repository: directoryRepository(input.organizationId, repo),
+        branches: branches.map((branch) => ({
+          name: branch.name,
+          sha: branch.commit.id,
+          protected: branch.protected,
+        })),
+        nextPage: branches.length === input.perPage ? input.page + 1 : null,
+      };
     }),
     probe: tokens.pipe(
       Effect.flatMap((saved) =>

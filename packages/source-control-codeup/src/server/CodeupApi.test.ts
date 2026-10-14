@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { SourceControlProviderKind, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -13,6 +13,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as CodeupApi from "./CodeupApi.ts";
 import { driver } from "./driver.ts";
@@ -236,6 +237,11 @@ describe("Codeup API and driver", () => {
         .pipe(Effect.flip);
       expect(error.reason).toBe("unavailable");
       expect(JSON.stringify(error)).not.toContain("private-pat-value");
+      const directoryError = yield* (yield* CodeupApi.CodeupApi)
+        .listRepositories(directoryInput)
+        .pipe(Effect.flip);
+      expect(directoryError.reason).toBe("unavailable");
+      expect(JSON.stringify(directoryError)).not.toContain("private-pat-value");
     }).pipe(Effect.provide(layer));
   });
 
@@ -298,6 +304,7 @@ describe("Codeup automatic authentication", () => {
     environment: NodeJS.ProcessEnv,
     missingWrapper = false,
     failedWrapper = false,
+    output?: ReturnType<typeof TestSourceControlHost.processOutput>,
   ) => {
     const calls: Array<{ command: string; args: ReadonlyArray<string>; env?: NodeJS.ProcessEnv }> =
       [];
@@ -337,7 +344,7 @@ describe("Codeup automatic authentication", () => {
                   }),
                 );
               return Effect.succeed(
-                TestSourceControlHost.processOutput(JSON.stringify(repository())),
+                output ?? TestSourceControlHost.processOutput(JSON.stringify(repository())),
               );
             },
           },
@@ -374,6 +381,56 @@ describe("Codeup automatic authentication", () => {
       expect(JSON.stringify(error)).not.toContain("private stderr");
     }).pipe(Effect.provide(layer));
   });
+  it.effect.each([
+    [401, "unauthenticated"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [429, "rate-limited"],
+    [503, "unavailable"],
+  ] as const)("preserves CLI SDK HTTP %s without exposing stderr", ([status, reason]) => {
+    const { layer, calls } = automatic(
+      {},
+      false,
+      false,
+      TestSourceControlHost.processOutput("", {
+        exitCode: ChildProcessSpawner.ExitCode(1),
+        stderr: `Error: request execution failed: SDKError:\n   StatusCode: ${status}\n   Data: private-error-body`,
+      }),
+    );
+    return Effect.gen(function* () {
+      const error = yield* (yield* CodeupApi.CodeupApi)
+        .getRepository("org-a/team/repo")
+        .pipe(Effect.flip);
+      expect(error.reason).toBe(reason);
+      expect(error.status).toBe(status);
+      expect(JSON.stringify(error)).not.toContain("private-error-body");
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ allowNonZeroExit: true });
+    }).pipe(Effect.provide(layer));
+  });
+  it.effect.each(["unstructured", "truncated", "invalid-utf8"] as const)(
+    "does not infer absence from incomplete CLI errors: %s",
+    (scenario) => {
+      const { layer } = automatic({}, false, false, {
+        ...TestSourceControlHost.processOutput("", {
+          exitCode: ChildProcessSpawner.ExitCode(1),
+          stderr:
+            scenario === "unstructured"
+              ? "Local configuration error 404"
+              : "SDKError:\n   StatusCode: 404\n",
+        }),
+        stderrTruncated: scenario === "truncated",
+        stderrInvalidUtf8: scenario === "invalid-utf8",
+      });
+      return Effect.gen(function* () {
+        const error = yield* (yield* CodeupApi.CodeupApi)
+          .getRepository("org-a/team/repo")
+          .pipe(Effect.flip);
+        expect(error.reason).toBe("unavailable");
+        expect(error.status).toBeNull();
+      }).pipe(Effect.provide(layer));
+    },
+  );
   it.effect("uses the environment PAT only for its configured organization", () => {
     const { layer, calls, sent } = automatic({
       ALIBABA_CLOUD_YUNXIAO_ACCESS_TOKEN: "env-pat",
@@ -408,6 +465,127 @@ describe("Codeup automatic authentication", () => {
       ).toBe("not-configured");
       expect(sent).toHaveLength(0);
       expect(calls).toHaveLength(0);
+    }).pipe(Effect.provide(layer));
+  });
+});
+
+const directoryInput = {
+  provider: SourceControlProviderKind.make("codeup"),
+  apiHost: "openapi-rdc.aliyuncs.com",
+  organizationId: "org-a",
+  page: 1,
+  perPage: 2,
+};
+describe("Codeup repository directory", () => {
+  it.effect.each([
+    { page: 0, perPage: 20 },
+    { page: 1, perPage: 101 },
+    { page: 1.5, perPage: 20 },
+    { page: 1, perPage: 0 },
+  ])("rejects invalid page bounds before HTTP: %s", (bounds) => {
+    const { layer, sent } = harness();
+    return Effect.gen(function* () {
+      const api = yield* CodeupApi.CodeupApi;
+      expect(
+        (yield* api.listRepositories({ ...directoryInput, ...bounds }).pipe(Effect.flip)).reason,
+      ).toBe("invalid-repository");
+      expect(sent).toHaveLength(0);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("reads only the requested page and preserves nested same-name repositories", () => {
+    const { layer, sent } = harness((request) =>
+      json(
+        request.url.includes("page=2")
+          ? []
+          : [
+              repository("org-a/team/repo"),
+              { ...repository("org-a/other/repo"), id: 124, defaultBranch: undefined },
+            ],
+      ),
+    );
+    return Effect.gen(function* () {
+      const api = yield* CodeupApi.CodeupApi;
+      const first = yield* api.listRepositories({ ...directoryInput, search: "repo" });
+      expect(first.nextPage).toBe(2);
+      expect(
+        first.repositories.map((r) => [r.repositoryId, r.nameWithOwner, r.defaultBranch]),
+      ).toEqual([
+        ["123", "org-a/team/repo", "develop"],
+        ["124", "org-a/other/repo", null],
+      ]);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.url).toContain("page=1&perPage=2&search=repo");
+      expect(yield* api.listRepositories({ ...directoryInput, page: 2 })).toEqual({
+        repositories: [],
+        nextPage: null,
+      });
+    }).pipe(Effect.provide(layer));
+  });
+  it.effect(
+    "rejects unsupported hosts and mismatched organization paths before sending credentials",
+    () => {
+      const { layer, sent } = harness();
+      return Effect.gen(function* () {
+        const api = yield* CodeupApi.CodeupApi;
+        expect(
+          (yield* api
+            .listRepositories({ ...directoryInput, apiHost: "private.example" })
+            .pipe(Effect.flip)).reason,
+        ).toBe("unsupported-host");
+        expect(
+          (yield* api
+            .listBranches({ ...directoryInput, repository: "org-b/repo", repositoryId: "123" })
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid-repository");
+        expect(sent).toHaveLength(0);
+      }).pipe(Effect.provide(layer));
+    },
+  );
+  it.effect("rejects response organization mismatch", () => {
+    const { layer } = harness(() => json([repository("org-b/team/repo")]));
+    return Effect.gen(function* () {
+      const api = yield* CodeupApi.CodeupApi;
+      expect((yield* api.listRepositories(directoryInput).pipe(Effect.flip)).reason).toBe(
+        "invalid-response",
+      );
+    }).pipe(Effect.provide(layer));
+  });
+  it.effect("verifies repository ID and reads paged SHAs and the actual default branch", () => {
+    const { layer, sent } = harness((request) =>
+      json(
+        request.url.includes("/branches")
+          ? [
+              { name: "develop", commit: { id: "abcdef" }, protected: true },
+              { name: "feature", commit: { id: "fedcba" }, protected: false },
+            ]
+          : repository(),
+      ),
+    );
+    return Effect.gen(function* () {
+      const api = yield* CodeupApi.CodeupApi;
+      const input = { ...directoryInput, repository: "org-a/team/repo", repositoryId: "123" };
+      const result = yield* api.listBranches(input);
+      expect(result.repository.defaultBranch).toBe("develop");
+      expect(result.branches[0]).toEqual({ name: "develop", sha: "abcdef", protected: true });
+      expect(result.nextPage).toBe(2);
+      expect(sent[1]?.url).toContain("/repositories/123/branches?page=1&perPage=2");
+      expect(
+        (yield* api.listBranches({ ...input, repositoryId: "999" }).pipe(Effect.flip)).reason,
+      ).toBe("invalid-repository");
+      expect(sent).toHaveLength(3);
+    }).pipe(Effect.provide(layer));
+  });
+  it.effect.each([
+    [401, "unauthenticated"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [429, "rate-limited"],
+  ] as const)("preserves API status %s as %s", ([status, reason]) => {
+    const { layer } = harness(() => json({}, status));
+    return Effect.gen(function* () {
+      const api = yield* CodeupApi.CodeupApi;
+      expect((yield* api.listRepositories(directoryInput).pipe(Effect.flip)).reason).toBe(reason);
     }).pipe(Effect.provide(layer));
   });
 });

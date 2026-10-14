@@ -1226,6 +1226,9 @@ export const make = Effect.gen(function* () {
       projectId: input.project.project.id,
       projectTitle: input.project.project.title,
       repository: input.project.repository,
+      ...(input.item.nativeIdentity === undefined
+        ? {}
+        : { nativeIdentity: input.item.nativeIdentity }),
       number: input.item.number,
       title: input.item.title,
       url: input.item.url,
@@ -1707,6 +1710,9 @@ export const make = Effect.gen(function* () {
             provider: project.api.kind,
             projectId: project.project.id,
             repository: project.repository,
+            ...(changeRequest.nativeIdentity === undefined
+              ? {}
+              : { nativeIdentity: changeRequest.nativeIdentity }),
             number: changeRequest.number,
             title: changeRequest.title,
             url: changeRequest.url,
@@ -1800,6 +1806,9 @@ export const make = Effect.gen(function* () {
             projectTitle: project.project.title,
             workspaceRoot: project.project.workspaceRoot,
             repository: project.repository,
+            ...(changeRequest.nativeIdentity === undefined
+              ? {}
+              : { nativeIdentity: changeRequest.nativeIdentity }),
             number: changeRequest.number,
             title: changeRequest.title,
             body: changeRequest.body,
@@ -2127,7 +2136,32 @@ export const make = Effect.gen(function* () {
                     ),
                   )
                 : Effect.succeed(false);
-            return mergeSettings.pipe(
+            // This fresh read is a preflight, not atomic fencing on hosts without a native guard.
+            const headPreflight =
+              input.expectedHeadSha === undefined
+                ? Effect.void
+                : project.api
+                    .getChangeRequest({
+                      cwd: project.project.workspaceRoot,
+                      repository: project.repository,
+                      host: project.host,
+                      number: input.number,
+                    })
+                    .pipe(
+                      Effect.mapError(toPullRequestError("runAction")),
+                      Effect.flatMap((current) =>
+                        current.headSha === input.expectedHeadSha
+                          ? Effect.void
+                          : Effect.fail(
+                              new PullRequestOperationError({
+                                operation: "runAction",
+                                detail: "The pull request head changed. Refresh before continuing.",
+                              }),
+                            ),
+                      ),
+                    );
+            return headPreflight.pipe(
+              Effect.andThen(mergeSettings),
               Effect.flatMap((removeAgentCreditsOnMerge) =>
                 project.api
                   .runAction({
@@ -2138,6 +2172,9 @@ export const make = Effect.gen(function* () {
                     action: input.action,
                     ...(removeAgentCreditsOnMerge ? { removeAgentCreditsOnMerge: true } : {}),
                     ...(input.stackNumber === undefined ? {} : { stackNumber: input.stackNumber }),
+                    ...(input.expectedHeadSha === undefined
+                      ? {}
+                      : { expectedHeadSha: input.expectedHeadSha }),
                     ...(input.expectedStackHeads === undefined
                       ? {}
                       : { expectedStackHeads: input.expectedStackHeads }),

@@ -1,3 +1,4 @@
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   type PullRequestCapabilities,
   type PullRequestViewerPermissions,
@@ -89,12 +90,28 @@ export const make = Effect.gen(function* () {
         ),
       );
     });
-  const mr = (input: Ref) =>
-    read(
+  const mr = Effect.fn("CodeupPullRequestProvider.mr")(function* (input: Ref) {
+    const value = yield* read(
       input,
       { operation: "GetChangeRequest", params: { localId: input.number } },
       Json.MergeRequest,
     );
+    const repository = value.detailUrl
+      ? null
+      : yield* api.getRepository(input.repository).pipe(Effect.mapError(mapError("repository")));
+    const url = value.detailUrl ? parseChangeRequestUrl(value.detailUrl) : null;
+    if (
+      value.localId !== input.number ||
+      (repository !== null && value.targetProjectId !== repository.id) ||
+      (value.detailUrl &&
+        (url === null ||
+          url.host !== input.host ||
+          url.repository !== input.repository.toLowerCase() ||
+          url.number !== input.number))
+    )
+      return yield* failure("identity", "Codeup returned another merge request or repository.");
+    return value;
+  });
   const patches = (input: Ref) =>
     read(
       input,
@@ -200,9 +217,18 @@ export const make = Effect.gen(function* () {
       }),
     );
   const comment = Effect.fn("CodeupPullRequestProvider.comment")(function* (
-    input: Ref & { readonly body: string; readonly threadId?: string },
+    input: Ref & {
+      readonly body: string;
+      readonly threadId?: string;
+      readonly expectedHeadSha?: string;
+    },
   ) {
     const versions = yield* patches(input);
+    if (input.expectedHeadSha !== undefined && input.expectedHeadSha !== versions.source.commitId)
+      return yield* failure(
+        "review",
+        "The merge request changed before the comment was posted. Refresh and review the current diff.",
+      );
     yield* write(input, {
       operation: "CreateChangeRequestComment",
       body: {
@@ -493,9 +519,21 @@ export const make = Effect.gen(function* () {
       ),
     runAction: Effect.fn("CodeupPullRequestProvider.runAction")(function* (input) {
       if (input.action === "close" || input.action === "reopen") {
+        const desired = input.action === "close" ? "closed" : "open";
+        if (Json.state((yield* mr(input)).status) === desired) return;
         yield* write(input, {
           operation: input.action === "close" ? "CloseChangeRequest" : "ReopenChangeRequest",
-        });
+        }).pipe(
+          Effect.catch((error) =>
+            mr(input).pipe(
+              Effect.matchEffect({
+                onFailure: () => Effect.fail(error),
+                onSuccess: (after) =>
+                  Json.state(after.status) === desired ? Effect.void : Effect.fail(error),
+              }),
+            ),
+          ),
+        );
         const after = yield* mr(input);
         if (Json.state(after.status) !== (input.action === "close" ? "closed" : "open"))
           return yield* failure(
@@ -510,6 +548,11 @@ export const make = Effect.gen(function* () {
             "Codeup merge requirements have not passed, or the conflict check is incomplete. Review the merge request on Codeup.",
           );
         const versions = yield* patches(input);
+        if (
+          input.expectedHeadSha !== undefined &&
+          input.expectedHeadSha !== versions.source.commitId
+        )
+          return yield* failure("merge", "The merge request head changed. Refresh before merging.");
         const currentChecks = yield* checks(input, versions);
         if (currentChecks.some((check) => check.required && check.status !== "success"))
           return yield* failure(
@@ -524,6 +567,19 @@ export const make = Effect.gen(function* () {
           return yield* failure(
             "merge",
             "The merge request changed while its checks were read. Refresh before merging.",
+          );
+        const finalRequest = yield* mr(input);
+        if (
+          finalRequest.targetBranch !== before.targetBranch ||
+          finalRequest.sourceBranch !== before.sourceBranch ||
+          finalRequest.sourceProjectId !== before.sourceProjectId ||
+          finalRequest.targetProjectId !== before.targetProjectId ||
+          finalRequest.allRequirementsPass !== true ||
+          finalRequest.conflictCheckStatus !== "NO_CONFLICT"
+        )
+          return yield* failure(
+            "merge",
+            "The merge request target or requirements changed. Refresh before merging.",
           );
         // No bypass flag: Codeup checks its own gates. Its merge API has no expected-head
         // parameter, so a preflight cannot promise atomic head fencing.
@@ -546,14 +602,35 @@ export const make = Effect.gen(function* () {
           );
       } else return yield* failure(input.action, "This action is not supported by Codeup.");
     }),
-    updateChangeRequest: (input) =>
-      write(input, {
-        operation: "UpdateChangeRequest",
-        body: {
-          ...(input.title !== undefined ? { title: input.title } : {}),
-          ...(input.body !== undefined ? { description: input.body } : {}),
-        },
-      }),
+    updateChangeRequest: Effect.fn("CodeupPullRequestProvider.updateChangeRequest")(
+      function* (input) {
+        const matches = (value: typeof Json.MergeRequest.Type) =>
+          (input.title === undefined || value.title === input.title) &&
+          (input.body === undefined || (value.description ?? "") === input.body);
+        if (matches(yield* mr(input))) return;
+        yield* write(input, {
+          operation: "UpdateChangeRequest",
+          body: {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.body !== undefined ? { description: input.body } : {}),
+          },
+        }).pipe(
+          Effect.catch((error) =>
+            mr(input).pipe(
+              Effect.matchEffect({
+                onFailure: () => Effect.fail(error),
+                onSuccess: (after) => (matches(after) ? Effect.void : Effect.fail(error)),
+              }),
+            ),
+          ),
+        );
+        if (!matches(yield* mr(input)))
+          return yield* failure(
+            "update",
+            "Codeup has not confirmed the requested fields. Refresh before retrying.",
+          );
+      },
+    ),
     comment,
     updateComment: (input) =>
       write(input, {
@@ -567,23 +644,22 @@ export const make = Effect.gen(function* () {
           "review",
           "Inline review drafts require a patch-set identity and are not supported in this build.",
         );
-      if (input.verdict === "comment") {
-        if (input.body.trim()) yield* comment(input);
-        return;
-      }
       const versions = yield* patches(input);
       if (!input.expectedHeadSha || input.expectedHeadSha !== versions.source.commitId)
         return yield* failure(
           "review",
           "The merge request changed since it was displayed. Refresh and review the current diff before submitting.",
         );
-      yield* write(input, {
-        operation: "ReviewChangeRequest",
-        body: {
-          reviewOpinion: input.verdict === "approve" ? "PASS" : "NOT_PASS",
-          reviewComment: input.body,
-        },
-      });
+      if (input.verdict === "comment") {
+        if (input.body.trim()) yield* comment(input);
+      } else
+        yield* write(input, {
+          operation: "ReviewChangeRequest",
+          body: {
+            reviewOpinion: input.verdict === "approve" ? "PASS" : "NOT_PASS",
+            reviewComment: input.body,
+          },
+        });
       const after = yield* patches(input);
       if (after.source.commitId !== versions.source.commitId)
         return yield* failure(
@@ -594,14 +670,7 @@ export const make = Effect.gen(function* () {
     listReviewerCandidates: Effect.fn("CodeupPullRequestProvider.listReviewerCandidates")(
       function* (input) {
         const [value, members] = yield* Effect.all(
-          [
-            mr(input),
-            read(
-              input,
-              { operation: "ListRepositoryMembers", query: { page: 1, perPage: 100 } },
-              Json.Members,
-            ),
-          ],
+          [mr(input), read(input, { operation: "ListRepositoryMembers" }, Json.Members)],
           { concurrency: 2 },
         );
         return {
@@ -615,7 +684,7 @@ export const make = Effect.gen(function* () {
               avatarUrl: u.avatarUrl ?? null,
               isRequested: value.reviewers.some((r) => r.userId === u.userId),
             })),
-          truncated: members.length >= 100,
+          truncated: false,
         };
       },
     ),

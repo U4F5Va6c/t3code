@@ -25,6 +25,8 @@ export const User = Schema.Struct({
 export const Viewer = Schema.Struct({ id: TrimmedNonEmptyString, name: text, username: text });
 const states = Schema.Literals(["UNDER_DEV", "UNDER_REVIEW", "TO_BE_MERGED", "CLOSED", "MERGED"]);
 const common = {
+  bizId: text,
+  detailUrl: text,
   localId: PositiveInt,
   title: TrimmedNonEmptyString,
   sourceBranch: TrimmedNonEmptyString,
@@ -186,9 +188,16 @@ export const state = (value: typeof states.Type) =>
       ? ("closed" as const)
       : ("open" as const);
 export const summary = (repository: string, mr: typeof MergeRequest.Type) => ({
+  nativeIdentity: {
+    repositoryId: mr.targetProjectId,
+    localId: mr.localId,
+    ...(mr.bizId ? { bizId: mr.bizId } : {}),
+    sourceRepositoryId: mr.sourceProjectId,
+    targetRepositoryId: mr.targetProjectId,
+  },
   number: mr.localId,
   title: mr.title,
-  url: `${codeupRepositoryUrl(repository)}/change/${mr.localId}`,
+  url: mr.detailUrl || `${codeupRepositoryUrl(repository)}/change/${mr.localId}`,
   headBranch: mr.sourceBranch,
   baseBranch: mr.targetBranch,
   state: state(mr.status),

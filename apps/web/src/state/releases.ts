@@ -10,6 +10,8 @@ import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { AsyncResult, Atom } from "effect/reactivity";
 
+import { useEnvironmentQuery } from "./query";
+
 const Release = Schema.Struct({
   tag_name: Schema.String,
   draft: Schema.optionalKey(Schema.Boolean),
@@ -67,7 +69,7 @@ export function useReleasePublished(version: string | null): boolean {
   return AsyncResult.getOrElse(result, () => false);
 }
 
-const codeupReleaseAtom = Atom.make(
+export const codeupReleaseAtom = Atom.make(
   Effect.gen(function* () {
     const response = yield* HttpClient.get(cliReleaseIndexPageUrl(1, "codeup"));
     const body = yield* HttpClientResponse.filterStatusOk(response).pipe(
@@ -81,11 +83,6 @@ const codeupReleaseAtom = Atom.make(
   ),
 ).pipe(Atom.withRefresh("5 minutes"), Atom.keepAlive);
 
-const NO_CODEUP_RELEASE = Atom.make(AsyncResult.success<string | null>(null));
-
-export function useCodeupReleaseVersion(enabled: boolean): string | null {
-  return AsyncResult.getOrElse(
-    useAtomValue(enabled ? codeupReleaseAtom : NO_CODEUP_RELEASE),
-    () => null,
-  );
+export function useCodeupReleaseVersion(enabled: boolean) {
+  return useEnvironmentQuery(enabled ? codeupReleaseAtom : null);
 }

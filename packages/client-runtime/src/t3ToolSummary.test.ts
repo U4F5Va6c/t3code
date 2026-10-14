@@ -282,3 +282,22 @@ describe("summarizeT3ToolCalls", () => {
     });
   });
 });
+
+it("summarizes directory page reads without claiming a complete repository inventory", () => {
+  expect(
+    summarizeT3ToolCalls("source-control-repositories", [
+      completed({}, { repositories: [], nextPage: 2 }),
+    ]).label,
+  ).toBe("Browsed repositories 1 time");
+  expect(
+    summarizeT3ToolCalls("source-control-branches", [
+      completed({}, { branches: [], nextPage: null }),
+    ]).label,
+  ).toBe("Read repository branches 1 time");
+});
+
+it("summarizes native pull request activity reads", () => {
+  expect(summarizeT3ToolCalls("t3_pull_request_activity", [completed({ number: 7 })]).label).toBe(
+    "Read pull request activity 1 time",
+  );
+});

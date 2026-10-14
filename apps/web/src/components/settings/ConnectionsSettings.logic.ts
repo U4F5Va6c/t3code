@@ -107,3 +107,13 @@ export async function applyWslEnableSelection(input: {
   }
   return await bridge.setWslBackendEnabled(true);
 }
+
+/** Only a successful lookup with an installable release can confirm the current version. */
+export function getReleaseCheckStatus(query: {
+  readonly data: string | null;
+  readonly isPending: boolean;
+  readonly isSuccess: boolean;
+}): "checking" | "unavailable" | "confirmed" {
+  if (query.isPending) return "checking";
+  return query.isSuccess && query.data !== null ? "confirmed" : "unavailable";
+}

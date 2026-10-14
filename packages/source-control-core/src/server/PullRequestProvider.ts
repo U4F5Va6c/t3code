@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type {
   PullRequestStackMembership,
+  PullRequestSummary,
   PullRequestAction,
   PullRequestStackHead,
   PullRequestActor,
@@ -85,6 +86,7 @@ export interface PullRequestProviderFailure {
 
 /** A change request as the provider sees it, before the service attaches project context. */
 export interface ProviderChangeRequest {
+  readonly nativeIdentity?: PullRequestSummary["nativeIdentity"];
   /** Repository-scoped identity where accounts are not shared across the host. */
   readonly viewer?: string;
   readonly stack?: PullRequestStackMembership;
@@ -115,6 +117,7 @@ export interface ProviderChangeRequest {
 
 /** The fields needed to keep a linked thread's pull request status live. */
 export interface ProviderChangeRequestSummary {
+  readonly nativeIdentity?: PullRequestSummary["nativeIdentity"];
   readonly number: number;
   readonly title: string;
   readonly url: string;
@@ -583,6 +586,7 @@ export interface PullRequestProviderApi {
       readonly action: PullRequestAction;
       readonly stackNumber?: number;
       readonly expectedStackHeads?: ReadonlyArray<PullRequestStackHead>;
+      readonly expectedHeadSha?: string;
       /** Apply `mergeMessageRewrite` to the merge message; never sent to a host without one. */
       readonly removeAgentCreditsOnMerge?: boolean;
       /** Meaningful for `merge` and `enable-auto-merge`; absent takes the host's own default. */

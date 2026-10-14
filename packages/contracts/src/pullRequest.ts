@@ -535,7 +535,16 @@ export const PullRequestStackMembership = Schema.Struct({
 });
 export type PullRequestStackMembership = typeof PullRequestStackMembership.Type;
 
+const PullRequestNativeIdentity = Schema.Struct({
+  repositoryId: PositiveInt,
+  localId: PositiveInt,
+  bizId: Schema.optional(TrimmedNonEmptyString),
+  sourceRepositoryId: PositiveInt,
+  targetRepositoryId: PositiveInt,
+});
+
 export const PullRequestListEntry = Schema.Struct({
+  nativeIdentity: Schema.optional(PullRequestNativeIdentity),
   /** Overrides the host identity for providers with repository-scoped accounts. */
   viewer: Schema.optional(TrimmedNonEmptyString),
   stack: Schema.optional(PullRequestStackMembership),
@@ -771,6 +780,7 @@ export type PullRequestPreview = typeof PullRequestPreview.Type;
  * status check never loads permissions, repository settings, checks, or base comparison data.
  */
 export const PullRequestSummary = Schema.Struct({
+  nativeIdentity: Schema.optional(PullRequestNativeIdentity),
   provider: SourceControlProviderKind,
   projectId: ProjectId,
   repository: TrimmedNonEmptyString,
@@ -881,6 +891,7 @@ export const PullRequestReportStateInput = Schema.Struct({
 export type PullRequestReportStateInput = typeof PullRequestReportStateInput.Type;
 
 export const PullRequestDetail = Schema.Struct({
+  nativeIdentity: Schema.optional(PullRequestNativeIdentity),
   provider: SourceControlProviderKind,
   capabilities: PullRequestCapabilities,
   /** What this viewer may do, which `capabilities` says nothing about. Both narrow the page. */
@@ -1125,6 +1136,7 @@ export const PullRequestStackHead = Schema.Struct({
 export type PullRequestStackHead = typeof PullRequestStackHead.Type;
 
 export const PullRequestActionInput = Schema.Struct({
+  expectedHeadSha: Schema.optional(TrimmedNonEmptyString),
   /** Native stack scope; only send to environments advertising pullRequestStackActions. */
   stackNumber: Schema.optional(PositiveInt),
   expectedStackHeads: Schema.optional(Schema.Array(PullRequestStackHead)),

@@ -703,3 +703,40 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
     ),
   );
 });
+
+it.effect(
+  "dispatches directory pages through the registered provider and rejects unsupported providers",
+  () => {
+    const input = {
+      provider: SourceControlProviderKind.make("codeup"),
+      apiHost: "openapi-rdc.aliyuncs.com",
+      organizationId: "org-a",
+      page: 2,
+      perPage: 10,
+    };
+    const calls: unknown[] = [];
+    return Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      assert.deepStrictEqual(yield* service.listRepositories(input), {
+        repositories: [],
+        nextPage: null,
+      });
+      assert.deepStrictEqual(calls, [input]);
+      const failure = yield* service
+        .listBranches({ ...input, repository: "org-a/team/repo", repositoryId: "123" })
+        .pipe(Effect.flip);
+      assert.include(failure.detail, "does not support");
+    }).pipe(
+      Effect.provide(
+        layer({
+          provider: makeProvider({
+            listRepositories: (request) => {
+              calls.push(request);
+              return Effect.succeed({ repositories: [], nextPage: null });
+            },
+          }),
+        }),
+      ),
+    );
+  },
+);

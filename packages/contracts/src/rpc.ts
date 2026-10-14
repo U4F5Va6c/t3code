@@ -365,6 +365,10 @@ import {
   SourceControlRepositoryError,
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
+  SourceControlRepositoryDirectoryInput,
+  SourceControlRepositoryDirectoryResult,
+  SourceControlRepositoryBranchesInput,
+  SourceControlRepositoryBranchesResult,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
@@ -562,6 +566,8 @@ export const WS_METHODS = {
   pullRequestsSetLabels: "pullRequests.setLabels",
 
   // Source control methods
+  sourceControlListRepositories: "sourceControl.listRepositories",
+  sourceControlListBranches: "sourceControl.listBranches",
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
@@ -1158,6 +1164,17 @@ const WsPullRequestsSetLabelsRpc = Rpc.make(WS_METHODS.pullRequestsSetLabels, {
   payload: PullRequestLabelChangeInput,
   success: Schema.Void,
   error: PullRequestRpcError,
+});
+
+const WsSourceControlListRepositoriesRpc = Rpc.make(WS_METHODS.sourceControlListRepositories, {
+  payload: SourceControlRepositoryDirectoryInput,
+  success: SourceControlRepositoryDirectoryResult,
+  error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+const WsSourceControlListBranchesRpc = Rpc.make(WS_METHODS.sourceControlListBranches, {
+  payload: SourceControlRepositoryBranchesInput,
+  success: SourceControlRepositoryBranchesResult,
+  error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
 });
 
 const WsSourceControlLookupRepositoryRpc = Rpc.make(WS_METHODS.sourceControlLookupRepository, {
@@ -1973,6 +1990,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsRequestReviewersRpc,
   WsPullRequestsLabelCandidatesRpc,
   WsPullRequestsSetLabelsRpc,
+  WsSourceControlListRepositoriesRpc,
+  WsSourceControlListBranchesRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
