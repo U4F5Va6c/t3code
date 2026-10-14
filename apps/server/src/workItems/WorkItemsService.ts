@@ -454,12 +454,4 @@ const make = Effect.gen(function* () {
     ),
   });
 });
-export const layer: Layer.Layer<
-  WorkItemsService,
-  never,
-  | SourceControlHost.SourceControlHost
-  | Projex.ProjexApi
-  | Receipts.WorkItemCreationReceiptRepository
-  | ServerEnvironment.ServerEnvironment
-  | Crypto.Crypto
-> = Layer.effect(WorkItemsService, make);
+export const layer = Layer.effect(WorkItemsService, make);

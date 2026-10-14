@@ -95,6 +95,7 @@ jobs:
           apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
           apps/server/src/mcp/McpSessionRegistry.test.ts
           apps/server/src/workItems/WorkItemsService.test.ts
+          apps/server/src/workItems/WorkItemsRpc.test.ts
           apps/server/src/persistence/WorkItemCreationReceiptRepository.test.ts
           apps/server/src/mcp/toolkits/workItems/handlers.test.ts
           apps/server/src/auth/EnvironmentAuth.test.ts

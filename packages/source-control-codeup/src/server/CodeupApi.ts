@@ -565,11 +565,7 @@ const make = Effect.gen(function* () {
   });
 });
 
-export const layer: Layer.Layer<
-  CodeupApi,
-  never,
-  HttpClient.HttpClient | SourceControlHost.SourceControlHost
-> = Layer.effect(CodeupApi, make);
+export const layer = Layer.effect(CodeupApi, make);
 
 const PROJEX_WORKFLOW_SCRIPT = `
 const [org, id] = process.argv.slice(1);

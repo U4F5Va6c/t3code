@@ -548,6 +548,72 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
 const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
+
+// Keep handler service inference bounded while serving the unchanged full protocol group.
+const ServerCoreWsRpcGroup = ServerWsRpcGroup.omit(
+  WS_METHODS.workItemsConnections,
+  WS_METHODS.workItemsProjects,
+  WS_METHODS.workItemsMetadata,
+  WS_METHODS.workItemsSearch,
+  WS_METHODS.workItemsGet,
+  WS_METHODS.workItemsCreate,
+  WS_METHODS.workItemsReceipt,
+  WS_METHODS.workItemsRecover,
+  WS_METHODS.workItemsUpdate,
+  WS_METHODS.workItemsRelate,
+  WS_METHODS.workItemsReady,
+);
+
+export const layerWorkItemsRpc = Layer.mergeAll(
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsConnections,
+    Effect.map(
+      WorkItemsService.WorkItemsService,
+      (service) => (input) => service.connections(input),
+    ),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsProjects,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.projects(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsMetadata,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.metadata(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsSearch,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.search(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsGet,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.get(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsCreate,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.create(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsReceipt,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.receipt(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsRecover,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.recover(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsUpdate,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.update(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsRelate,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.relate(input)),
+  ),
+  ServerWsRpcGroup.toLayerHandler(
+    WS_METHODS.workItemsReady,
+    Effect.map(WorkItemsService.WorkItemsService, (service) => (input) => service.ready(input)),
+  ),
+);
+
 // When a resuming client's cursor is more than this many events behind the
 // current head, skip the per-event catch-up replay and send a fresh shell
 // snapshot instead. Replaying each intervening event costs a shell refetch;
@@ -1203,7 +1269,7 @@ const layerWsRpc = (
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
-  ServerWsRpcGroup.toLayer(
+  ServerCoreWsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
@@ -1240,7 +1306,6 @@ const layerWsRpc = (
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
-      const workItems = yield* WorkItemsService.WorkItemsService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
@@ -1827,7 +1892,7 @@ const layerWsRpc = (
         return result;
       });
 
-      const handlers = ServerWsRpcGroup.of({
+      const handlers = ServerCoreWsRpcGroup.of({
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -2484,17 +2549,6 @@ const layerWsRpc = (
                 Effect.forkScoped,
               ),
           ),
-        [WS_METHODS.workItemsConnections]: (input) => workItems.connections(input),
-        [WS_METHODS.workItemsProjects]: (input) => workItems.projects(input),
-        [WS_METHODS.workItemsMetadata]: (input) => workItems.metadata(input),
-        [WS_METHODS.workItemsSearch]: (input) => workItems.search(input),
-        [WS_METHODS.workItemsGet]: (input) => workItems.get(input),
-        [WS_METHODS.workItemsCreate]: (input) => workItems.create(input),
-        [WS_METHODS.workItemsReceipt]: (input) => workItems.receipt(input),
-        [WS_METHODS.workItemsRecover]: (input) => workItems.recover(input),
-        [WS_METHODS.workItemsUpdate]: (input) => workItems.update(input),
-        [WS_METHODS.workItemsRelate]: (input) => workItems.relate(input),
-        [WS_METHODS.workItemsReady]: (input) => workItems.ready(input),
         [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
         [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
         [WS_METHODS.pullRequestsRoutingIdentity]: (input) => pullRequests.routingIdentity(input),
@@ -3219,12 +3273,15 @@ export const layer = Layer.unwrap(
           return httpEffect;
         }).pipe(
           Effect.provide(
-            layerWsRpc(
-              session,
-              clientOrigin,
-              clientAnalyticsProps,
-              previewAutomationBroker,
-              serverBrowser,
+            Layer.merge(
+              layerWorkItemsRpc,
+              layerWsRpc(
+                session,
+                clientOrigin,
+                clientAnalyticsProps,
+                previewAutomationBroker,
+                serverBrowser,
+              ),
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
