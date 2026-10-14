@@ -7,24 +7,16 @@ const BASE = "codeup-integration";
 const BRANCH = "sync/upstream-nightly";
 const MARKER = "<!-- codeup-nightly-sync -->";
 
-async function ensureCi(github, sha, ref) {
+async function latestPrCi(github, sha) {
   const { data } = await github.rest.actions.listWorkflowRuns({
     ...REPOSITORY,
     workflow_id: "codeup-ci.yml",
     head_sha: sha,
-    branch: ref,
-    ...(ref === BRANCH ? { event: "pull_request" } : {}),
+    branch: BRANCH,
+    event: "pull_request",
     per_page: 100,
   });
-  const existing = data.workflow_runs[0];
-  // PR events now create approval-required runs; only token-authenticated pushes need a dispatch.
-  if (!existing && ref === BASE)
-    await github.rest.actions.createWorkflowDispatch({
-      ...REPOSITORY,
-      workflow_id: "codeup-ci.yml",
-      ref,
-    });
-  return existing;
+  return data.workflow_runs[0];
 }
 
 function latestNightly(releases) {
@@ -88,8 +80,6 @@ async function sync({ github, context, core, run = git, dryRun = false, autoMerg
     }
   };
   if (contains(`origin/${BASE}`, commit.sha)) {
-    // Recover a dispatch failure after a token-authenticated merge (which emits no push run).
-    if (autoMerge && !dryRun) await ensureCi(github, run("rev-parse", `origin/${BASE}`), BASE);
     core.info("The integration branch already contains this Nightly; no PR or build needed.");
     return { status: "current", tag: nightly.tag_name };
   }
@@ -147,7 +137,7 @@ async function sync({ github, context, core, run = git, dryRun = false, autoMerg
     (await github.rest.pulls.create({ ...REPOSITORY, head: BRANCH, base: BASE, title, body })).data;
   if (pr && (changed || pr.title !== title))
     await github.rest.pulls.update({ ...REPOSITORY, pull_number: pr.number, title, body });
-  const ci = await ensureCi(github, sha, BRANCH);
+  const ci = await latestPrCi(github, sha);
   if (!ci || ci.conclusion === "action_required")
     core.info("Waiting for the PR workflow. Approve workflows to run on the PR if requested.");
   if (autoMerge && ci?.conclusion === "success") {
@@ -160,7 +150,7 @@ async function sync({ github, context, core, run = git, dryRun = false, autoMerg
         merge_method: "merge",
       });
       if (!merged.merged) throw Error(merged.message);
-      await ensureCi(github, merged.sha, BASE);
+      // The dedicated credential emits a push event; dispatching here would build twice.
     } catch (error) {
       if (error.status !== 405 && error.status !== 409) throw error;
       core.info(`Automatic merge is waiting for branch protection: ${error.message}`);

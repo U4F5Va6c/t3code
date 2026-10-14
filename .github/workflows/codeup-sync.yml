@@ -15,10 +15,7 @@ on:
         default: false
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  actions: write
+  contents: read
 
 concurrency:
   group: codeup-nightly-sync
@@ -30,10 +27,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Require workflow-capable sync credential
+        if: inputs.dry_run != true
+        env:
+          CODEUP_SYNC_TOKEN: ${{ secrets.CODEUP_SYNC_TOKEN }}
+        run: |
+          if [ -z "$CODEUP_SYNC_TOKEN" ]; then
+            echo '::error::Configure CODEUP_SYNC_TOKEN with Contents, Workflows, Pull requests and Issues write access, plus Actions read access. See docs/operations/codeup-fork.md.'
+            exit 1
+          fi
       - uses: actions/checkout@v6
         with:
           ref: codeup-integration
           fetch-depth: 0
+          token: ${{ secrets.CODEUP_SYNC_TOKEN || github.token }}
       - name: Set merge identity
         run: |
           git config user.name 'github-actions[bot]'
@@ -44,6 +51,7 @@ jobs:
           CODEUP_AUTO_MERGE: ${{ vars.CODEUP_AUTO_MERGE }}
           CODEUP_DRY_RUN: ${{ inputs.dry_run }}
         with:
+          github-token: ${{ secrets.CODEUP_SYNC_TOKEN || github.token }}
           script: |
             const { sync } = require('./.github/scripts/codeup-sync.cjs');
             const result = await sync({ github, context, core,
