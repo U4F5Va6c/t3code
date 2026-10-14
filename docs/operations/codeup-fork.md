@@ -37,6 +37,8 @@ git merge --no-ff <official-nightly-tag>
 
 人工同步还须更新 `.github/codeup-upstream.json` 的 tag、SHA 与发布时间。同步分支完成相关测试、类型检查和手动验收后，再通过 Fork 内部 PR 以 Merge Commit 方式合入 `codeup-integration`，不 Squash。该分支受保护：必须经 PR 且 Codeup CI 通过，管理员同样不能直接推送或强推。合入后运行 `gh api repos/U4F5Va6c/t3code/actions/workflows --paginate -q '.workflows[]|select(.state=="active")|.path'`，除显式维护的 Fork 工作流外，新增上游工作流立即禁用。PR 目标不要误选上游仓库。只有明确要贡献上游时才另开上游 PR。
 
+Fork 自有数据库迁移放在 `CodeupMigrations/`，使用独立的 `codeup_sql_migrations` 记录表；不要占用上游 `Migrations.ts` 的编号。旧版将 `WorkItemCreationReceipts` 记为上游编号 62，升级时会在事务中转移该记录并保留原表及数据，释放编号供上游使用。
+
 ## 独立 Source Control 的边界
 
 Codeup 实现放在新 `packages/source-control-codeup`，复用现有 SourceControlDriver 和 PullRequestProvider 契约。GitHub Provider 内部实现保持不动。设置中使用独立的 Codeup 入口和凭据绑定，仓库 remote 识别后交给对应 driver。
