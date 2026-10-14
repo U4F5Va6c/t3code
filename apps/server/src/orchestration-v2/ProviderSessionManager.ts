@@ -362,8 +362,7 @@ export const layerWithOptions = (
       const agentScope = yield* AgentScope;
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(
         function* (threadId: ThreadId) {
-          if (Option.isNone(serverSettings))
-            return { browser: true, device: false, workItems: false };
+          if (Option.isNone(serverSettings)) return { browser: true, device: false };
           return yield* Effect.gen(function* () {
             const settings = yield* serverSettings.value.getSettings;
             const thread = yield* projectionStore.getThread(threadId);
@@ -374,15 +373,7 @@ export const layerWithOptions = (
             const deviceOverridden = entries.some(
               (entry) => entry.enableAgentDeviceAccess !== undefined,
             );
-            const workItemsOverridden = entries.some(
-              (entry) => entry.enableAgentWorkItemsAccess !== undefined,
-            );
-            if (
-              browserOverridden ||
-              deviceOverridden ||
-              workItemsOverridden ||
-              settings.enableAgentWorkItemsAccess
-            ) {
+            if (browserOverridden || deviceOverridden) {
               const project = Option.isSome(projectService)
                 ? yield* projectService.value.getById(thread.projectId)
                 : Option.none();
@@ -390,21 +381,19 @@ export const layerWithOptions = (
                 return {
                   browser: browserOverridden ? false : settings.enableAgentBrowserAccess,
                   device: deviceOverridden ? false : settings.enableAgentDeviceAccess,
-                  workItems: false,
                 };
             }
             const effective = resolveProjectSettings(settings, thread.projectId).settings;
             return {
               browser: effective.enableAgentBrowserAccess,
               device: effective.enableAgentDeviceAccess,
-              workItems: effective.enableAgentWorkItemsAccess,
             };
           }).pipe(
             Effect.catch((cause) =>
               Effect.logWarning(
-                "Could not resolve agent access; withholding browser, device and work-item tools.",
+                "Could not resolve agent access; withholding browser and device tools.",
                 { threadId, cause },
-              ).pipe(Effect.as({ browser: false, device: false, workItems: false })),
+              ).pipe(Effect.as({ browser: false, device: false })),
             ),
           );
         },
@@ -499,17 +488,13 @@ export const layerWithOptions = (
                 // the credential it started with, so a thread that detaches and
                 // re-attaches across a workspace handoff must come back to the
                 // same token or the process's tool calls fail auth.
-                const {
-                  browser: browserToolsAvailable,
-                  device: deviceToolsAvailable,
-                  workItems: workItemsToolsAvailable,
-                } = yield* agentAccessSettings(threadId);
+                const { browser: browserToolsAvailable, device: deviceToolsAvailable } =
+                  yield* agentAccessSettings(threadId);
                 const capabilities = new Set<
                   import("../mcp/McpInvocationContext.ts").McpCapability
                 >(["orchestration", "worktree", "pull-requests"]);
                 if (browserToolsAvailable) capabilities.add("preview");
                 if (deviceToolsAvailable) capabilities.add("device");
-                if (workItemsToolsAvailable) capabilities.add("work-items");
                 const existing = yield* mcpSessions.read(threadId);
                 if (existing !== undefined) {
                   // Reserve before the async resolve so a release cannot
@@ -534,8 +519,7 @@ export const layerWithOptions = (
                     // A flipped browser-access setting must not survive through
                     // credential reuse: rotate so the new scope reflects it.
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
-                    resolved.capabilities.has("device") === deviceToolsAvailable &&
-                    resolved.capabilities.has("work-items") === workItemsToolsAvailable
+                    resolved.capabilities.has("device") === deviceToolsAvailable
                   ) {
                     return { mcpCredentialId: existing.providerSessionId, issued: false };
                   }
@@ -2015,8 +1999,8 @@ export const layerWithOptions = (
       // Parent of every session scope. On layer close, shutdown releases the
       // live sessions first, then closes any session whose open is still in
       // flight, time-boxed so a stuck adapter cannot hold up server shutdown.
-      // Parallel, so one session whose close hangs does not stop the rest from
-      // closing within the time box.
+      // Both steps run in parallel. The service launcher kills the server
+      // 5 s after it asks it to stop, and a busy server can hold 15 sessions.
       const sessionScopes = yield* Scope.make("parallel");
       const shutdown = Effect.gen(function* () {
         const activeSessions = [...(yield* Ref.get(sessions)).values()];
@@ -2034,7 +2018,7 @@ export const layerWithOptions = (
                 }),
               ),
             ),
-          { discard: true },
+          { concurrency: "unbounded", discard: true },
         );
       });
       yield* Effect.addFinalizer(() =>

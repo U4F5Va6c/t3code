@@ -22,9 +22,25 @@ const receipt = {
 };
 
 describe("Codeup migrations", () => {
-  it.effect("creates Fork tables once without consuming upstream migration ids", () =>
+  it.effect("does not create retired work item tables in new databases", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations();
+      yield* runMigrations();
+      assert.deepStrictEqual(
+        yield* sql`SELECT name FROM sqlite_master WHERE name IN ('work_item_creation_receipts', 'codeup_sql_migrations')`,
+        [],
+      );
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("preserves released Fork tables without consuming upstream migration ids", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* Migrator.make({})({
+        table: "codeup_sql_migrations",
+        loader: Migrator.fromRecord({ "1_WorkItemCreationReceipts": WorkItemCreationReceipts }),
+      });
       yield* runMigrations();
       yield* sql`INSERT INTO work_item_creation_receipts ${sql.insert(receipt)}`;
       yield* runMigrations();
@@ -91,7 +107,10 @@ describe("Codeup migrations", () => {
         yield* sql`SELECT name FROM effect_sql_migrations WHERE migration_id = 62`,
         [{ name: "ThreadFailureLookupIndex" }],
       );
-      yield* sql`INSERT INTO work_item_creation_receipts ${sql.insert(receipt)}`;
+      assert.deepStrictEqual(
+        yield* sql`SELECT name FROM sqlite_master WHERE name = 'work_item_creation_receipts'`,
+        [],
+      );
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 

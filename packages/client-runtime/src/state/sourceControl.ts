@@ -21,14 +21,6 @@ export function createSourceControlEnvironmentAtoms<R, E>(
       label: "environment-data:server:source-control-discovery",
       tag: WS_METHODS.serverDiscoverSourceControl,
     }),
-    repositories: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:source-control:repositories",
-      tag: WS_METHODS.sourceControlListRepositories,
-    }),
-    branches: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:source-control:branches",
-      tag: WS_METHODS.sourceControlListBranches,
-    }),
     repository: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:source-control:repository",
       tag: WS_METHODS.sourceControlLookupRepository,

@@ -322,7 +322,8 @@ export const make = Effect.gen(function* () {
           yield* linkCreatedPullRequest({
             threadId: input.threadId,
             result,
-            commandId: crypto.randomUUIDv4.pipe(
+            commandId: crypto.randomUUIDv4().pipe(
+              Effect.orDie,
               Effect.map((id) => CommandId.make(`server:pr-created-link:${id}`)),
             ),
           });

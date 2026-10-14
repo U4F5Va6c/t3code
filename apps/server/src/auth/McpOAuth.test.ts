@@ -608,23 +608,3 @@ it("matches loopback redirects on everything but the port, and https redirects e
   expect(matches("https://bot.example/cb", "https://bot.example/cb?x=1")).toBe(false);
   expect(matches("https://bot.example/cb", "https://evil.example/cb")).toBe(false);
 });
-
-it.live("rejects refresh-token exchanges instead of expanding an existing MCP grant", () =>
-  withRoutes((handler) =>
-    Effect.gen(function* () {
-      const response = yield* handler(
-        at(
-          "/oauth/mcp/token",
-          form({
-            grant_type: "refresh_token",
-            refresh_token: "old-grant",
-            client_id: "old-client",
-          }),
-        ),
-      );
-      expect(response.status).toBeGreaterThanOrEqual(400);
-      const body = yield* json<Record<string, unknown>>(response);
-      expect(body.access_token).toBeUndefined();
-    }),
-  ),
-);

@@ -1,5 +1,3 @@
-import * as WorkItemsHandlers from "./toolkits/workItems/handlers.ts";
-import { WorkItemsToolkit } from "./toolkits/workItems/tools.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -51,8 +49,6 @@ import * as WorktreeHandlers from "./toolkits/worktree/handlers.ts";
 import { WorktreeToolkit } from "./toolkits/worktree/tools.ts";
 import * as WorktreeMcpService from "./WorktreeMcpService.ts";
 import * as PullRequestsHandlers from "./toolkits/pullRequests/handlers.ts";
-import { SourceControlToolkit } from "./toolkits/sourceControl/tools.ts";
-import * as SourceControlHandlers from "./toolkits/sourceControl/handlers.ts";
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
 import * as DeviceHandlers from "./toolkits/device/handlers.ts";
 import {
@@ -405,7 +401,7 @@ const saveScreenshot = Effect.fn("McpHttpServer.saveScreenshot")(function* (
   const millis = yield* Clock.currentTimeMillis;
   const crypto = yield* Crypto.Crypto;
   // Two saves in the same millisecond must not overwrite each other.
-  const unique = (yield* crypto.randomUUIDv4.pipe(Effect.orDie)).slice(0, 8);
+  const unique = (yield* crypto.randomUUIDv4().pipe(Effect.orDie)).slice(0, 8);
   const fileName = `browser-screenshot-${screenshotSiteSlug(pageUrl)}-${millis.toString(36)}-${unique}.png`;
   const screenshotPath = path.join(config.browserArtifactsDir, fileName);
   yield* fileSystem.makeDirectory(config.browserArtifactsDir, { recursive: true }).pipe(
@@ -842,11 +838,6 @@ export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentHandlers.layer,
 );
 
-export const layerSourceControlToolkit = toolkitRegistration(
-  SourceControlToolkit,
-  SourceControlHandlers.layer,
-);
-
 export const layerPullRequestsToolkit = toolkitRegistration(
   PullRequestsToolkit,
   PullRequestsHandlers.layer,
@@ -875,10 +866,7 @@ export const layerMcpTransport = McpServer.layerHttp({
   allowSessionTermination: true,
 }).pipe(Layer.provide(layerMcpAuthMiddleware));
 
-const layerWorkItemsToolkit = toolkitRegistration(WorkItemsToolkit, WorkItemsHandlers.layer);
-
 export const layer = Layer.mergeAll(
-  layerWorkItemsToolkit,
   layerPreviewToolkit,
   layerOrchestratorToolkit,
   layerThreadToolkit,
@@ -887,7 +875,6 @@ export const layer = Layer.mergeAll(
   layerEnvironmentToolkit,
   layerPreviewControlsRegistration,
   layerWorktreeToolkitRegistration,
-  layerSourceControlToolkit,
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
