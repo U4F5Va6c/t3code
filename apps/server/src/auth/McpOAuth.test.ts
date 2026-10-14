@@ -1,6 +1,8 @@
+import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthAdministrativeScopes,
+  EnvironmentId,
   type AuthCreatePairingCredentialInput,
   EnvironmentHttpApi,
 } from "@t3tools/contracts";
@@ -298,7 +300,32 @@ it.live("signs in with a pairing code and issues a token only /mcp accepts", () 
           at("/mcp", { headers: { authorization: `Bearer ${token.access_token}` } }),
         ),
       );
-      expect(client).toMatchObject({ label: "Claude Code", access: "auto" });
+      expect(client).toMatchObject({
+        label: "Claude Code",
+        access: "auto",
+        scopes: ["orchestration:read", "orchestration:operate"],
+      });
+      const authenticator = yield* McpHttpServer.McpClientAuthenticator.pipe(
+        Effect.provide(
+          McpOAuth.layerMcpClientAuthenticator.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(EnvironmentAuth.EnvironmentAuth, auth),
+                Layer.mock(ServerEnvironment.ServerEnvironment)({
+                  getEnvironmentId: Effect.succeed(EnvironmentId.make("test-env")),
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      const restored = yield* authenticator.authenticate(
+        HttpServerRequest.fromWeb(
+          at("/mcp", { headers: { authorization: `Bearer ${token.access_token}` } }),
+        ),
+      );
+      expect(restored?.client?.scopes).toEqual(client.scopes);
+      expect(restored?.client?.scopes).not.toContain("source-control:write");
 
       // The same token is refused by the rest of the environment.
       const session = yield* handler(

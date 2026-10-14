@@ -1,3 +1,4 @@
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   type PullRequestCapabilities,
   type PullRequestViewerPermissions,
@@ -89,12 +90,28 @@ export const make = Effect.gen(function* () {
         ),
       );
     });
-  const mr = (input: Ref) =>
-    read(
+  const mr = Effect.fn("CodeupPullRequestProvider.mr")(function* (input: Ref) {
+    const value = yield* read(
       input,
       { operation: "GetChangeRequest", params: { localId: input.number } },
       Json.MergeRequest,
     );
+    const repository = value.detailUrl
+      ? null
+      : yield* api.getRepository(input.repository).pipe(Effect.mapError(mapError("repository")));
+    const url = value.detailUrl ? parseChangeRequestUrl(value.detailUrl) : null;
+    if (
+      value.localId !== input.number ||
+      (repository !== null && value.targetProjectId !== repository.id) ||
+      (value.detailUrl &&
+        (url === null ||
+          url.host !== input.host ||
+          url.repository !== input.repository.toLowerCase() ||
+          url.number !== input.number))
+    )
+      return yield* failure("identity", "Codeup returned another merge request or repository.");
+    return value;
+  });
   const patches = (input: Ref) =>
     read(
       input,
@@ -493,9 +510,21 @@ export const make = Effect.gen(function* () {
       ),
     runAction: Effect.fn("CodeupPullRequestProvider.runAction")(function* (input) {
       if (input.action === "close" || input.action === "reopen") {
+        const desired = input.action === "close" ? "closed" : "open";
+        if (Json.state((yield* mr(input)).status) === desired) return;
         yield* write(input, {
           operation: input.action === "close" ? "CloseChangeRequest" : "ReopenChangeRequest",
-        });
+        }).pipe(
+          Effect.catch((error) =>
+            mr(input).pipe(
+              Effect.matchEffect({
+                onFailure: () => Effect.fail(error),
+                onSuccess: (after) =>
+                  Json.state(after.status) === desired ? Effect.void : Effect.fail(error),
+              }),
+            ),
+          ),
+        );
         const after = yield* mr(input);
         if (Json.state(after.status) !== (input.action === "close" ? "closed" : "open"))
           return yield* failure(
@@ -546,14 +575,35 @@ export const make = Effect.gen(function* () {
           );
       } else return yield* failure(input.action, "This action is not supported by Codeup.");
     }),
-    updateChangeRequest: (input) =>
-      write(input, {
-        operation: "UpdateChangeRequest",
-        body: {
-          ...(input.title !== undefined ? { title: input.title } : {}),
-          ...(input.body !== undefined ? { description: input.body } : {}),
-        },
-      }),
+    updateChangeRequest: Effect.fn("CodeupPullRequestProvider.updateChangeRequest")(
+      function* (input) {
+        const matches = (value: typeof Json.MergeRequest.Type) =>
+          (input.title === undefined || value.title === input.title) &&
+          (input.body === undefined || (value.description ?? "") === input.body);
+        if (matches(yield* mr(input))) return;
+        yield* write(input, {
+          operation: "UpdateChangeRequest",
+          body: {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.body !== undefined ? { description: input.body } : {}),
+          },
+        }).pipe(
+          Effect.catch((error) =>
+            mr(input).pipe(
+              Effect.matchEffect({
+                onFailure: () => Effect.fail(error),
+                onSuccess: (after) => (matches(after) ? Effect.void : Effect.fail(error)),
+              }),
+            ),
+          ),
+        );
+        if (!matches(yield* mr(input)))
+          return yield* failure(
+            "update",
+            "Codeup has not confirmed the requested fields. Refresh before retrying.",
+          );
+      },
+    ),
     comment,
     updateComment: (input) =>
       write(input, {

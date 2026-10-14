@@ -6,6 +6,17 @@ export interface T3McpToolPresentation {
 }
 
 export type T3McpToolSummaryAction =
+  | "t3_source_control_publish"
+  | "t3_source_control_lookup"
+  | "t3_pull_requests"
+  | "t3_pull_request_detail"
+  | "t3_pull_request_diff"
+  | "t3_pull_request_file_contents"
+  | "t3_pull_request_edit"
+  | "t3_pull_request_close"
+  | "t3_pull_request_reopen"
+  | "t3_pull_request_create"
+  | "t3_git_push"
   | "capabilities"
   | "delegate"
   | "task-status"
@@ -88,6 +99,41 @@ const T3_MCP_SERVER_ALIASES = new Set(["t3-code", "t3_code", "t3code"]);
 
 // Cards, activity rows, summaries, and provider identity recovery share this inventory.
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
+  t3_source_control_publish: tool(
+    ["Publish", "Publishing", "Published", "repository"],
+    "t3_source_control_publish",
+  ),
+  t3_source_control_lookup: tool(
+    ["Look up", "Looking up", "Looked up", "repository"],
+    "t3_source_control_lookup",
+  ),
+  t3_pull_requests: tool(["List", "Listing", "Listed", "pull requests"], "t3_pull_requests"),
+  t3_pull_request_detail: tool(
+    ["Read", "Reading", "Read", "pull request"],
+    "t3_pull_request_detail",
+  ),
+  t3_pull_request_diff: tool(
+    ["Read", "Reading", "Read", "pull request diff"],
+    "t3_pull_request_diff",
+  ),
+  t3_pull_request_file_contents: tool(
+    ["Read", "Reading", "Read", "pull request file"],
+    "t3_pull_request_file_contents",
+  ),
+  t3_pull_request_edit: tool(["Edit", "Editing", "Edited", "pull request"], "t3_pull_request_edit"),
+  t3_pull_request_close: tool(
+    ["Close", "Closing", "Closed", "pull request"],
+    "t3_pull_request_close",
+  ),
+  t3_pull_request_reopen: tool(
+    ["Reopen", "Reopening", "Reopened", "pull request"],
+    "t3_pull_request_reopen",
+  ),
+  t3_pull_request_create: tool(
+    ["Create", "Creating", "Created", "pull request"],
+    "t3_pull_request_create",
+  ),
+  t3_git_push: tool(["Push", "Pushing", "Pushed", "branch"], "t3_git_push"),
   t3_source_control_repositories: tool(
     ["Browse", "Browsing", "Browsed", "repositories"],
     "source-control-repositories",

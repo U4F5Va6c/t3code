@@ -8,6 +8,8 @@ import {
   ChatImageAttachment,
   CommandId,
   EnvironmentId,
+  ProjectId,
+  SourceControlProviderKind,
   NodeId,
   OrchestratorMcpThreadReadResult,
   ProviderDriverKind,
@@ -918,6 +920,7 @@ it.effect("repository MCP uses the shared service only for the granted environme
   }).pipe(
     Effect.provide(
       McpHttpServer.layerSourceControlToolkit.pipe(
+        Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
         Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
@@ -932,6 +935,100 @@ it.effect("repository MCP uses the shared service only for the granted environme
               calls.push(request);
               return Effect.succeed({ repositories: [], nextPage: null });
             },
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+it.effect("lookup uses read scope and publication requires the actual write grant", () => {
+  const calls: unknown[] = [];
+  const projectId = ProjectId.make("repository-project");
+  const repository = {
+    provider: SourceControlProviderKind.make("codeup"),
+    nameWithOwner: "org/repo",
+    url: "https://codeup.aliyun.com/org/repo",
+    sshUrl: "git@codeup.aliyun.com:org/repo.git",
+  };
+  const input = { projectId, provider: "codeup", repository: "org/repo" };
+  const invoke = (
+    access: "read-only" | "full-access",
+    scopes: ReadonlyArray<"orchestration:read" | "source-control:write">,
+  ): McpInvocationContext.McpInvocationScope => ({
+    ...scope,
+    thread: undefined,
+    client: { sessionId: "test-client", label: "Test", access, scopes },
+  });
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const call = (name: string, invocation: McpInvocationContext.McpInvocationScope) =>
+      server
+        .callTool({ name, arguments: { ...input, visibility: "private" } })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+    expect(
+      (yield* call("t3_source_control_publish", invoke("full-access", ["orchestration:read"])))
+        .isError,
+    ).toBe(true);
+    expect(calls).toEqual([]);
+    expect(
+      (yield* call("t3_source_control_lookup", invoke("read-only", ["orchestration:read"])))
+        .isError,
+    ).toBe(false);
+    expect(
+      (yield* call("t3_source_control_publish", invoke("full-access", ["source-control:write"])))
+        .isError,
+    ).toBe(false);
+    expect(calls).toHaveLength(2);
+    for (const request of calls)
+      expect(request).toMatchObject({ cwd: "/validated/project", repository: "org/repo" });
+  }).pipe(
+    Effect.provide(
+      McpHttpServer.layerSourceControlToolkit.pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
+        Layer.provide(
+          Layer.mock(ServerEnvironment.ServerEnvironment)({
+            getEnvironmentId: Effect.succeed(scope.environmentId),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(ProjectService.ProjectService)({
+            getShell: () =>
+              Effect.succeedSome({
+                id: projectId,
+                title: "Test",
+                workspaceRoot: "/validated/project",
+                defaultModelSelection: null,
+                scripts: [],
+                repositoryIdentity: null,
+                createdAt: "2026-10-14T00:00:00Z",
+                updatedAt: "2026-10-14T00:00:00Z",
+              }),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
+            lookupRepository: (request) =>
+              Effect.sync(() => {
+                calls.push(request);
+                return repository;
+              }),
+            publishRepository: (request) =>
+              Effect.sync(() => {
+                calls.push(request);
+                return {
+                  repository,
+                  remoteName: "origin",
+                  remoteUrl: repository.sshUrl,
+                  branch: "main",
+                  status: "remote_added" as const,
+                };
+              }),
           }),
         ),
       ),

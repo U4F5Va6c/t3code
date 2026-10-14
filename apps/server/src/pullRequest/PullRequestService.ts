@@ -1226,6 +1226,9 @@ export const make = Effect.gen(function* () {
       projectId: input.project.project.id,
       projectTitle: input.project.project.title,
       repository: input.project.repository,
+      ...(input.item.nativeIdentity === undefined
+        ? {}
+        : { nativeIdentity: input.item.nativeIdentity }),
       number: input.item.number,
       title: input.item.title,
       url: input.item.url,
@@ -1707,6 +1710,9 @@ export const make = Effect.gen(function* () {
             provider: project.api.kind,
             projectId: project.project.id,
             repository: project.repository,
+            ...(changeRequest.nativeIdentity === undefined
+              ? {}
+              : { nativeIdentity: changeRequest.nativeIdentity }),
             number: changeRequest.number,
             title: changeRequest.title,
             url: changeRequest.url,
@@ -1800,6 +1806,9 @@ export const make = Effect.gen(function* () {
             projectTitle: project.project.title,
             workspaceRoot: project.project.workspaceRoot,
             repository: project.repository,
+            ...(changeRequest.nativeIdentity === undefined
+              ? {}
+              : { nativeIdentity: changeRequest.nativeIdentity }),
             number: changeRequest.number,
             title: changeRequest.title,
             body: changeRequest.body,

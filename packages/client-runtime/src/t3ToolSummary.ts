@@ -112,6 +112,40 @@ export function summarizeT3ToolCalls(
   );
   let label: string;
   switch (action) {
+    case "t3_source_control_publish":
+      label = phrase("Published", "publish", `repository ${times}`);
+      break;
+    case "t3_source_control_lookup":
+      label = phrase("Looked up", "look up", `repository ${times}`);
+      break;
+    case "t3_pull_requests":
+      label = phrase("Listed", "list", `pull requests ${times}`);
+      break;
+    case "t3_pull_request_detail":
+      label = phrase("Read", "read", `pull request ${times}`);
+      break;
+    case "t3_pull_request_diff":
+      label = phrase("Read", "read", `pull request diff ${times}`);
+      break;
+    case "t3_pull_request_file_contents":
+      label = phrase("Read", "read", `pull request file ${times}`);
+      break;
+    case "t3_pull_request_edit":
+      label = phrase("Edited", "edit", `pull request ${times}`);
+      break;
+    case "t3_pull_request_close":
+      label = phrase("Closed", "close", `pull request ${times}`);
+      break;
+    case "t3_pull_request_reopen":
+      label = phrase("Reopened", "reopen", `pull request ${times}`);
+      break;
+    case "t3_pull_request_create":
+      label = phrase("Created", "create", `pull request ${times}`);
+      break;
+    case "t3_git_push":
+      label = phrase("Pushed", "push", `branch ${times}`);
+      break;
+
     case "thread-send": {
       const messages = countEntities(selected.map((call) => id(call.output?.messageId)));
       const targetsKnown = threadIds.every((value) => value !== undefined);

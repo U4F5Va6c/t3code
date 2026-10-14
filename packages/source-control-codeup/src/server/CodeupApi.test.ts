@@ -13,6 +13,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as CodeupApi from "./CodeupApi.ts";
 import { driver } from "./driver.ts";
@@ -303,6 +304,7 @@ describe("Codeup automatic authentication", () => {
     environment: NodeJS.ProcessEnv,
     missingWrapper = false,
     failedWrapper = false,
+    output?: ReturnType<typeof TestSourceControlHost.processOutput>,
   ) => {
     const calls: Array<{ command: string; args: ReadonlyArray<string>; env?: NodeJS.ProcessEnv }> =
       [];
@@ -342,7 +344,7 @@ describe("Codeup automatic authentication", () => {
                   }),
                 );
               return Effect.succeed(
-                TestSourceControlHost.processOutput(JSON.stringify(repository())),
+                output ?? TestSourceControlHost.processOutput(JSON.stringify(repository())),
               );
             },
           },
@@ -379,6 +381,56 @@ describe("Codeup automatic authentication", () => {
       expect(JSON.stringify(error)).not.toContain("private stderr");
     }).pipe(Effect.provide(layer));
   });
+  it.effect.each([
+    [401, "unauthenticated"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [429, "rate-limited"],
+    [503, "unavailable"],
+  ] as const)("preserves CLI SDK HTTP %s without exposing stderr", ([status, reason]) => {
+    const { layer, calls } = automatic(
+      {},
+      false,
+      false,
+      TestSourceControlHost.processOutput("", {
+        exitCode: ChildProcessSpawner.ExitCode(1),
+        stderr: `Error: request execution failed: SDKError:\n   StatusCode: ${status}\n   Data: private-error-body`,
+      }),
+    );
+    return Effect.gen(function* () {
+      const error = yield* (yield* CodeupApi.CodeupApi)
+        .getRepository("org-a/team/repo")
+        .pipe(Effect.flip);
+      expect(error.reason).toBe(reason);
+      expect(error.status).toBe(status);
+      expect(JSON.stringify(error)).not.toContain("private-error-body");
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ allowNonZeroExit: true });
+    }).pipe(Effect.provide(layer));
+  });
+  it.effect.each(["unstructured", "truncated", "invalid-utf8"] as const)(
+    "does not infer absence from incomplete CLI errors: %s",
+    (scenario) => {
+      const { layer } = automatic({}, false, false, {
+        ...TestSourceControlHost.processOutput("", {
+          exitCode: ChildProcessSpawner.ExitCode(1),
+          stderr:
+            scenario === "unstructured"
+              ? "Local configuration error 404"
+              : "SDKError:\n   StatusCode: 404\n",
+        }),
+        stderrTruncated: scenario === "truncated",
+        stderrInvalidUtf8: scenario === "invalid-utf8",
+      });
+      return Effect.gen(function* () {
+        const error = yield* (yield* CodeupApi.CodeupApi)
+          .getRepository("org-a/team/repo")
+          .pipe(Effect.flip);
+        expect(error.reason).toBe("unavailable");
+        expect(error.status).toBeNull();
+      }).pipe(Effect.provide(layer));
+    },
+  );
   it.effect("uses the environment PAT only for its configured organization", () => {
     const { layer, calls, sent } = automatic({
       ALIBABA_CLOUD_YUNXIAO_ACCESS_TOKEN: "env-pat",

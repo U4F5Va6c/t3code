@@ -1,5 +1,6 @@
 import {
   type AuthMcpClientAccess,
+  type AuthEnvironmentScope,
   type EnvironmentId,
   McpCapabilityUnavailableError,
   OrchestratorMcpFailure,
@@ -29,6 +30,7 @@ export interface McpThreadCaller {
 
 /** An agent T3 Code did not launch, signed in through MCP OAuth. */
 export interface McpClientCaller {
+  readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
   readonly sessionId: string;
   readonly label: string;
   /** Read only, or the most the threads it starts or changes may run with. */

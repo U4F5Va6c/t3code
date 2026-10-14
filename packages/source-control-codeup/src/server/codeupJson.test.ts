@@ -2,7 +2,7 @@ import { PullRequestComment } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { activity, Comments } from "./codeupJson.ts";
+import { activity, Comments, MergeRequest, summary } from "./codeupJson.ts";
 
 const root = {
   comment_biz_id: "root",
@@ -99,5 +99,35 @@ describe("Codeup conversation states", () => {
       isResolved: false,
       isOutdated: false,
     });
+  });
+});
+
+const decodeMergeRequest = Schema.decodeSync(MergeRequest);
+
+it("preserves Codeup native IDs and the platform's full detail URL", () => {
+  const value = decodeMergeRequest({
+    localId: 7,
+    bizId: "biz-7",
+    targetProjectId: 12,
+    sourceProjectId: 34,
+    title: "Feature",
+    sourceBranch: "feature",
+    targetBranch: "main",
+    author: null,
+    reviewers: [],
+    status: "UNDER_REVIEW",
+    createTime: "2026-10-12T00:00:00Z",
+    updateTime: "2026-10-12T00:00:00Z",
+    detailUrl: "https://codeup.aliyun.com/org/team/repo/change/7",
+  });
+  expect(summary("org/team/repo", value)).toMatchObject({
+    nativeIdentity: {
+      repositoryId: 12,
+      localId: 7,
+      bizId: "biz-7",
+      sourceRepositoryId: 34,
+      targetRepositoryId: 12,
+    },
+    url: value.detailUrl,
   });
 });

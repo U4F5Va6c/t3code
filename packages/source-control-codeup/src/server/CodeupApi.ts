@@ -35,10 +35,26 @@ const Repository = Schema.Struct({
   accessLevel: Schema.optional(
     Schema.NullOr(Schema.Union([Schema.Number, Schema.NumberFromString])),
   ),
+  visibility: Schema.optional(Schema.Literals(["private", "internal", "public"])),
   archived: Schema.optional(Schema.Boolean),
   defaultBranch: Schema.optional(Schema.NullOr(TrimmedString)),
 });
 const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
+
+const httpFailure = (status: number | null) =>
+  new CodeupApiError({
+    status,
+    reason:
+      status === 401
+        ? "unauthenticated"
+        : status === 403
+          ? "forbidden"
+          : status === 404
+            ? "not-found"
+            : status === 429
+              ? "rate-limited"
+              : "unavailable",
+  });
 
 export class CodeupApiError extends Schema.TaggedError<CodeupApiError>()("CodeupApiError", {
   reason: Schema.Literals([
@@ -186,6 +202,7 @@ const make = Effect.gen(function* () {
           spawnCwd: workingDirectory,
           timeoutMs: 30_000,
           maxOutputBytes: 8 * 1024 * 1024,
+          allowNonZeroExit: true,
           env: { ALIBABA_CLOUD_YUNXIAO_API_BASE_URL: CODEUP_API_HOST },
         });
       const result = yield* run("aliyun-devops", []).pipe(
@@ -205,8 +222,17 @@ const make = Effect.gen(function* () {
             }),
         ),
       );
-      if (result.exitCode !== 0 || result.stdoutTruncated || result.stdoutInvalidUtf8)
-        return yield* new CodeupApiError({ reason: "unavailable", status: null });
+      if (result.stdoutTruncated || result.stdoutInvalidUtf8) return yield* httpFailure(null);
+      if (result.exitCode !== 0) {
+        // Only an explicit SDK HTTP status can authorize creating after a failed lookup.
+        const status =
+          !result.stderrTruncated && !result.stderrInvalidUtf8
+            ? result.stderr.match(
+                /\bSDKError:\r?\n[ \t]+StatusCode:[ \t]+([45]\d{2})[ \t]*\r?$/mu,
+              )?.[1]
+            : undefined;
+        return yield* httpFailure(status === undefined ? null : Number(status));
+      }
       return yield* decodeJson(result.stdout.trim() || "null").pipe(
         Effect.mapError(
           (cause) =>
@@ -244,19 +270,7 @@ const make = Effect.gen(function* () {
         ),
       );
     if (response.status < 200 || response.status >= 300) {
-      return yield* new CodeupApiError({
-        status: response.status,
-        reason:
-          response.status === 401
-            ? "unauthenticated"
-            : response.status === 403
-              ? "forbidden"
-              : response.status === 404
-                ? "not-found"
-                : response.status === 429
-                  ? "rate-limited"
-                  : "unavailable",
-      });
+      return yield* httpFailure(response.status);
     }
     const body = yield* collectUint8StreamText({
       stream: response.stream,

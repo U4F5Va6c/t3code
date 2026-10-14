@@ -13,6 +13,8 @@ const input = { cwd: "/repo", host: "codeup.aliyun.com", repository: "org/team/r
 const user = { userId: "user-1", name: "Reviewer", username: "reviewer", avatar: null };
 const mr = {
   localId: 7,
+  bizId: "mr-biz-7",
+  detailUrl: "https://codeup.aliyun.com/org/team/repo/change/7",
   title: "Add Codeup",
   sourceBranch: "feature",
   targetBranch: "main",
@@ -52,11 +54,14 @@ function harness(
     access?: number;
     checks?: unknown;
     failWrite?: boolean;
+    acceptedBeforeTimeout?: boolean;
     comments?: typeof Json.Comments.Type;
   } = {},
 ) {
   const requests: Array<{ method: string; url: string; body: unknown }> = [];
   let status = mr.status;
+  let title = mr.title;
+  let description = mr.description;
   let comments = options.comments ?? [];
   const http = HttpClient.make((request) => {
     const url = new URL(request.url);
@@ -73,7 +78,7 @@ function harness(
     let data: unknown;
     if (url.pathname.endsWith("/comments/list")) data = comments;
     else if (request.method !== "GET") {
-      if (options.failWrite)
+      if (options.failWrite && !options.acceptedBeforeTimeout)
         return Effect.succeed(
           HttpClientResponse.fromWeb(request, new Response("{}", { status: 503 })),
         );
@@ -88,6 +93,15 @@ function harness(
             : comment,
         );
       }
+      if (request.method === "PUT" && url.pathname.endsWith("/changeRequests/7")) {
+        const body = requests.at(-1)?.body as { title?: string; description?: string };
+        title = body.title ?? title;
+        description = body.description ?? description;
+      }
+      if (options.acceptedBeforeTimeout)
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(request, new Response("{}", { status: 503 })),
+        );
       data = { result: true };
     } else if (url.pathname.endsWith("/diffs/patches")) data = patchSets;
     else if (url.pathname.endsWith("/compares")) data = compare;
@@ -106,7 +120,14 @@ function harness(
             : "organization-viewer",
       };
     else if (url.pathname.endsWith("/changeRequests/7"))
-      data = { ...mr, status, allRequirementsPass: options.gate ?? true };
+      data = {
+        ...mr,
+        detailUrl: `https://${input.host}/${repository}/change/7`,
+        title,
+        description,
+        status,
+        allRequirementsPass: options.gate ?? true,
+      };
     else if (url.pathname.endsWith("/changeRequests")) {
       const page = Number(url.searchParams.get("page"));
       data = Array.from({ length: page === 1 ? 100 : 4 }, (_, i) => ({
@@ -388,3 +409,36 @@ describe("Codeup MR integration", () => {
     expect(result.reviewThreads[0]?.isOutdated).toBe(true);
   });
 });
+
+it.effect.each([false, true])(
+  "confirms state and edits after uncertain writes (accepted=%s)",
+  (acceptedBeforeTimeout) => {
+    const { layer, requests } = harness({ failWrite: true, acceptedBeforeTimeout });
+    return Effect.gen(function* () {
+      const provider = yield* Provider.make;
+      for (const operation of [
+        provider.runAction({ ...input, action: "close" }),
+        provider.runAction({ ...input, action: "reopen" }),
+        provider.updateChangeRequest({ ...input, title: "Updated", body: "New description" }),
+      ]) {
+        const result = yield* operation.pipe(Effect.result);
+        // Reopening an already-open MR is a successful no-op.
+        if (acceptedBeforeTimeout) expect(result._tag).toBe("Success");
+      }
+      const before = requests.filter((r) => r.method !== "GET").length;
+      if (acceptedBeforeTimeout) {
+        yield* provider.updateChangeRequest({
+          ...input,
+          title: "Updated",
+          body: "New description",
+        });
+        expect(requests.filter((r) => r.method !== "GET")).toHaveLength(before);
+      } else {
+        expect(
+          (yield* provider.updateChangeRequest({ ...input, title: "Updated" }).pipe(Effect.result))
+            ._tag,
+        ).toBe("Failure");
+      }
+    }).pipe(Effect.provide(layer));
+  },
+);

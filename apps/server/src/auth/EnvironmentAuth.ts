@@ -100,6 +100,7 @@ export const mcpClientScopes = (
       : [AuthOrchestrationReadScope, AuthOrchestrationOperateScope];
 
 export interface McpClientSession {
+  readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
   readonly sessionId: AuthSessionId;
   readonly label: string;
   readonly access: AuthMcpClientAccess;
@@ -1280,6 +1281,7 @@ export const make = Effect.gen(function* () {
         session.subject === MCP_CLIENT_SUBJECT && session.method === "bearer-access-token"
           ? Effect.succeed({
               sessionId: session.sessionId,
+              scopes: session.scopes,
               label: session.client.label ?? "MCP client",
               access: session.scopes.includes(AuthOrchestrationOperateScope)
                 ? (session.runtimeModeCeiling ?? "approval-required")

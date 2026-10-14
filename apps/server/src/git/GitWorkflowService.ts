@@ -1,8 +1,17 @@
+import * as Crypto from "effect/Crypto";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import * as PullRequestService from "../pullRequest/PullRequestService.ts";
+import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
+import { linkCreatedPullRequest } from "./linkCreatedPullRequest.ts";
+import { refreshPushedPullRequests } from "./refreshPushedPullRequests.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import {
+  CommandId,
   GitManagerError,
   GitCommandError,
   type VcsSwitchRefInput,
@@ -35,6 +44,19 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
   {
+    readonly runStackedActionAndRefresh: (
+      input: GitRunStackedActionInput,
+      options?: GitManager.GitRunStackedActionOptions,
+    ) => Effect.Effect<
+      GitRunStackedActionResult,
+      GitManagerServiceError,
+      | Orchestrator.OrchestratorV2
+      | ProjectService.ProjectService
+      | ProjectStore.ProjectStoreV2
+      | PullRequestService.PullRequestService
+      | VcsStatusBroadcaster.VcsStatusBroadcaster
+      | Crypto.Crypto
+    >;
     readonly isRepository: (cwd: string) => Effect.Effect<boolean, GitManagerServiceError>;
     readonly hasCommit: (input: {
       readonly cwd: string;
@@ -283,7 +305,35 @@ export const make = Effect.gen(function* () {
     (input: Input) =>
       ensureGit(operation, input.cwd).pipe(Effect.andThen(run(input)));
 
+  const runStackedAction = (
+    input: GitRunStackedActionInput,
+    options?: GitManager.GitRunStackedActionOptions,
+  ) =>
+    ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
+      Effect.andThen(gitManager.runStackedAction(input, options)),
+    );
+
   return GitWorkflowService.of({
+    runStackedActionAndRefresh: (input, options) =>
+      Effect.gen(function* () {
+        const result = yield* runStackedAction(input, options);
+        if (input.threadId !== undefined) {
+          const crypto = yield* Crypto.Crypto;
+          yield* linkCreatedPullRequest({
+            threadId: input.threadId,
+            result,
+            commandId: crypto.randomUUIDv4.pipe(
+              Effect.map((id) => CommandId.make(`server:pr-created-link:${id}`)),
+            ),
+          });
+        }
+        yield* refreshPushedPullRequests(input, result);
+        const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+        yield* broadcaster
+          .refreshStatus(input.cwd)
+          .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach);
+        return result;
+      }),
     isRepository: (cwd) =>
       registry.detect({ cwd }).pipe(
         Effect.map((handle) => handle?.kind === "git"),
@@ -355,10 +405,7 @@ export const make = Effect.gen(function* () {
       ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
         Effect.andThen(git.pullCurrentBranch(cwd)),
       ),
-    runStackedAction: (input, options) =>
-      ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
-        Effect.andThen(gitManager.runStackedAction(input, options)),
-      ),
+    runStackedAction,
     resolvePullRequest: routeGitManager(
       "GitWorkflowService.resolvePullRequest",
       gitManager.resolvePullRequest,

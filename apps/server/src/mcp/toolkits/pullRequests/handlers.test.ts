@@ -1,3 +1,10 @@
+import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
+import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
+import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
+import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
+import * as VcsStatusBroadcaster from "../../../vcs/VcsStatusBroadcaster.ts";
+import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
 import {
   EnvironmentId,
   ProjectId,
@@ -135,6 +142,7 @@ function makeLink(
 }
 
 interface HarnessOptions {
+  readonly callerModes?: Parameters<typeof McpToolAccessTestkit.liveThreadShell>[1];
   readonly thread?: PullRequestTestThread | null;
   readonly project?: OrchestrationProjectShell | null;
   /** A rejection the orchestrator reports as the dispatch error's cause. */
@@ -156,6 +164,7 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
   options: HarnessOptions = {},
 ) {
   const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+  const managementRequests: unknown[] = [];
   const guideRequests = yield* Ref.make<ReadonlyArray<PullRequestRef>>([]);
   const thread = options.thread === undefined ? makeThread([]) : options.thread;
   const project = options.project === undefined ? makeProject() : options.project;
@@ -172,6 +181,40 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       return { sequence: 1, storedEvents: [] };
     });
   const layerDependencies = Layer.mergeAll(
+    Layer.mock(ServerEnvironment.ServerEnvironment)({
+      getEnvironmentId: Effect.succeed(EnvironmentId.make("environment-1")),
+    }),
+    Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
+      resolve: () => Effect.succeed(project?.repositoryIdentity ?? null),
+    }),
+    Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+    Layer.mock(ProjectStore.ProjectStoreV2)({}),
+    Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
+    Layer.mock(PullRequestService.PullRequestService)({
+      invalidate: () => Effect.void,
+      update: (input) =>
+        Effect.sync(() => {
+          managementRequests.push(input);
+        }),
+      detail: (input) =>
+        Effect.sync(() => {
+          managementRequests.push(input);
+        }).pipe(
+          Effect.andThen(
+            Effect.fail(
+              new PullRequestOperationError({
+                operation: "detail",
+                detail: "test detail response",
+              }),
+            ),
+          ),
+        ),
+      diff: (input) =>
+        Effect.sync(() => {
+          managementRequests.push(input);
+          return { patch: "binary", truncated: true, nextCursor: "next" };
+        }),
+    }),
     Layer.mock(ProjectService.ProjectService)({
       getShell: () => Effect.succeed(Option.fromNullishOr(project)),
       listShells: () => Effect.succeed(options.projects ?? (project ? [project] : [])),
@@ -200,7 +243,10 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       dispatch,
     }),
     Layer.succeed(Crypto.Crypto, testCrypto),
-    McpToolAccessTestkit.liveThreadsLayer,
+    Layer.mock(ThreadManagement.ThreadManagementService)({
+      getThreadShell: (id) =>
+        Effect.succeed(McpToolAccessTestkit.liveThreadShell(id, options.callerModes)),
+    }),
   );
   const toolkit = yield* PullRequestsToolkit.pipe(
     Effect.provide(
@@ -213,6 +259,7 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
     name: Name,
     params: Parameters<typeof toolkit.handle<Name>>[1],
     capabilities: ReadonlyArray<McpInvocationContext.McpCapability> = ["pull-requests"],
+    scope = invocation(capabilities),
   ) =>
     toolkit.handle(name, params).pipe(
       Stream.unwrap,
@@ -221,10 +268,10 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       Effect.map(
         (chunk) => chunk.at(-1)!.result as Tool.Success<(typeof PullRequestsToolkit.tools)[Name]>,
       ),
-      Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(capabilities)),
+      Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
       Effect.provide(layerDependencies),
     );
-  return { commands, guideRequests, call };
+  return { commands, guideRequests, managementRequests, call };
 });
 
 describe("pull request toolkit handlers", () => {
@@ -739,4 +786,112 @@ it("keeps failure diagnostics as the cause rather than exposing them in the tool
   const failure = new PullRequestLinkFailedError({ cause });
   expect(failure.message).toBe("Could not link the pull request.");
   expect(failure.cause).toBe(cause);
+});
+
+describe("native pull request management access", () => {
+  const ref = { projectId: PROJECT_ID, repository: "t3tools/t3code", number: 1 };
+  const oauth = (
+    access: "full-access" | "read-only" | "approval-required",
+    scopes?: ReadonlyArray<"source-control:write" | "orchestration:read">,
+  ): McpInvocationContext.McpInvocationScope => ({
+    ...invocation(["pull-requests"]),
+    thread: undefined,
+    client: {
+      sessionId: "client",
+      label: "test",
+      access,
+      ...(scopes === undefined ? {} : { scopes }),
+    },
+  });
+  it.effect.each([
+    oauth("full-access"),
+    oauth("full-access", []),
+    oauth("read-only", ["source-control:write"]),
+    oauth("approval-required", ["source-control:write"]),
+    {
+      ...oauth("full-access", ["source-control:write"]),
+      environmentId: EnvironmentId.make("other"),
+    },
+    {
+      ...oauth("full-access", ["source-control:write"]),
+      capabilities: new Set<McpInvocationContext.McpCapability>(),
+    },
+  ])("refuses unauthorized writes before calling the service: %j", (scope) =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* harness
+        .call("t3_pull_request_edit", { ...ref, title: "new" }, [], scope)
+        .pipe(Effect.flip);
+      expect(harness.managementRequests).toEqual([]);
+    }),
+  );
+  it.effect("allows a signed full-access grant and a live full-access thread", () =>
+    Effect.gen(function* () {
+      for (const scope of [
+        oauth("full-access", ["source-control:write"]),
+        invocation(["pull-requests"]),
+      ]) {
+        const harness = yield* makeHarness();
+        const error = yield* harness
+          .call("t3_pull_request_edit", { ...ref, title: "new" }, [], scope)
+          .pipe(Effect.flip);
+        expect(error).toMatchObject({
+          _tag: "PullRequestOperationError",
+          detail: "test detail response",
+        });
+        expect(harness.managementRequests).toHaveLength(2);
+      }
+    }),
+  );
+  it.effect.each([
+    { runtimeMode: "approval-required" as const },
+    { interactionMode: "plan" as const },
+    { activeRunId: null },
+  ])("refuses unsafe thread writes before host calls: %j", (callerModes) =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ callerModes });
+      yield* harness.call("t3_pull_request_edit", { ...ref, title: "new" }).pipe(Effect.flip);
+      expect(harness.managementRequests).toEqual([]);
+    }),
+  );
+  it.effect("passes exact account and diff pagination through for URL and repository targets", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const scope = oauth("read-only", ["orchestration:read"]);
+      for (const target of [
+        ref,
+        { projectId: PROJECT_ID, url: "https://github.com/t3tools/t3code/pull/1" },
+      ]) {
+        const result = yield* harness.call(
+          "t3_pull_request_diff",
+          { ...target, expectedAccountId: "account", cursor: "cursor", commit: "sha" },
+          [],
+          scope,
+        );
+        expect(result).toEqual({ patch: "binary", truncated: true, nextCursor: "next" });
+      }
+      expect(harness.managementRequests).toHaveLength(2);
+      for (const request of harness.managementRequests)
+        expect(request).toMatchObject({
+          ...ref,
+          expectedAccountId: "account",
+          cursor: "cursor",
+          commit: "sha",
+        });
+    }),
+  );
+  it.effect("refuses contradictory URL/repository and another host before service calls", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      for (const target of [
+        { ...ref, url: "https://github.com/other/repo/pull/1" },
+        { ...ref, host: "codeup.aliyun.com" },
+        { ...ref, url: "https://github.com/t3tools/t3code/pull/2" },
+      ])
+        yield* harness
+          .call("t3_pull_request_detail", target, [], oauth("read-only", ["orchestration:read"]))
+          .pipe(Effect.flip);
+      expect(harness.managementRequests).toEqual([]);
+    }),
+  );
 });

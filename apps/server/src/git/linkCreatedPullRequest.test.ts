@@ -1,3 +1,10 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as Deferred from "effect/Deferred";
+import * as GitWorkflowService from "./GitWorkflowService.ts";
+import * as GitManager from "./GitManager.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import {
   CommandId,
   ProjectId,
@@ -263,5 +270,78 @@ it.effect(
         { push: { status: "pushed" } },
       ).pipe(Effect.provide(layerDependencies));
       expect(refreshed).toEqual([PROJECT_ID, PROJECT_ID, PROJECT_ID]);
+    }),
+);
+
+it.effect(
+  "shared stacked action links and refreshes once before returning to either transport",
+  () =>
+    Effect.gen(function* () {
+      const { commands, dispatch } = yield* recordingDispatch();
+      const refreshed: string[] = [];
+      const statusRefreshed = yield* Deferred.make<void>();
+      const result: GitRunStackedActionResult = {
+        action: "create_pr",
+        branch: { status: "skipped_not_requested" },
+        commit: { status: "skipped_not_requested" },
+        push: { status: "pushed" },
+        pr: { status: "created", number: 7, url: "https://github.acme.test/platform/api/pull/7" },
+        toast: { title: "Created", cta: { kind: "none" } },
+      };
+      const dependencies = Layer.mergeAll(
+        layerDependenciesFor(dispatch),
+        NodeCrypto.layer,
+        Layer.mock(ProjectStore.ProjectStoreV2)({}),
+        Layer.mock(PullRequestService.PullRequestService)({
+          refreshAfterTurn: (id) =>
+            Effect.sync(() => {
+              refreshed.push(id);
+            }),
+        }),
+        Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
+          refreshStatus: () =>
+            Deferred.succeed(statusRefreshed, undefined).pipe(
+              Effect.as({
+                isRepo: false,
+                hasPrimaryRemote: false,
+                isDefaultRef: false,
+                refName: null,
+                hasWorkingTreeChanges: false,
+                workingTree: { files: [], insertions: 0, deletions: 0 },
+                hasUpstream: false,
+                aheadCount: 0,
+                behindCount: 0,
+                aheadOfDefaultCount: 0,
+                pr: null,
+              }),
+            ),
+        }),
+      );
+      const workflowLayer = GitWorkflowService.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+              resolve: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),
+            }),
+            Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+            Layer.mock(GitManager.GitManager)({ runStackedAction: () => Effect.succeed(result) }),
+          ),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const workflow = yield* GitWorkflowService.GitWorkflowService;
+        expect(
+          yield* workflow.runStackedActionAndRefresh({
+            cwd: project.workspaceRoot,
+            projectId: PROJECT_ID,
+            threadId: THREAD_ID,
+            actionId: "test",
+            action: "create_pr",
+          }),
+        ).toEqual(result);
+        yield* Deferred.await(statusRefreshed);
+      }).pipe(Effect.provide(Layer.mergeAll(workflowLayer, dependencies)));
+      expect(yield* Ref.get(commands)).toHaveLength(1);
+      expect(refreshed).toEqual([PROJECT_ID]);
     }),
 );

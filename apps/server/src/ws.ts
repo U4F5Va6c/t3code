@@ -200,8 +200,6 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
-import { refreshPushedPullRequests } from "./git/refreshPushedPullRequests.ts";
-import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
@@ -1249,11 +1247,6 @@ const layerWsRpc = (
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
       const orchestrationEngine = yield* Orchestrator.OrchestratorV2;
       const crypto = yield* Crypto.Crypto;
-      const serverCommandId = (tag: string) =>
-        crypto.randomUUIDv4.pipe(
-          Effect.orDie,
-          Effect.map((id) => CommandId.make(`server:${tag}:${id}`)),
-        );
       const resolvePullRequestSyncKey = (reference: PullRequestRef) =>
         reference.host !== undefined && reference.repository.includes("/")
           ? Effect.succeed(pullRequestSyncKey(reference))
@@ -2841,40 +2834,25 @@ const layerWsRpc = (
         [WS_METHODS.gitRunStackedAction]: (input) =>
           Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
             gitWorkflow
-              .runStackedAction(input, {
+              .runStackedActionAndRefresh(input, {
                 actionId: input.actionId,
                 progressReporter: {
                   publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
                 },
               })
               .pipe(
+                Effect.provideService(Crypto.Crypto, crypto),
+                Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
+                Effect.provideService(ProjectService.ProjectService, projectService),
+                Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
+                Effect.provideService(PullRequestService.PullRequestService, pullRequests),
+                Effect.provideService(
+                  VcsStatusBroadcaster.VcsStatusBroadcaster,
+                  vcsStatusBroadcaster,
+                ),
                 Effect.matchCauseEffect({
                   onFailure: (cause) => Queue.failCause(queue, cause),
-                  onSuccess: (result) =>
-                    (input.threadId === undefined
-                      ? Effect.void
-                      : linkCreatedPullRequest({
-                          threadId: input.threadId,
-                          result,
-                          commandId: serverCommandId("pr-created-link"),
-                        }).pipe(
-                          Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
-                          Effect.provideService(ProjectService.ProjectService, projectService),
-                        )
-                    ).pipe(
-                      Effect.andThen(
-                        refreshPushedPullRequests(input, result).pipe(
-                          Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
-                          Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
-                          Effect.provideService(
-                            PullRequestService.PullRequestService,
-                            pullRequests,
-                          ),
-                        ),
-                      ),
-                      Effect.andThen(refreshGitStatus(input.cwd)),
-                      Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),
-                    ),
+                  onSuccess: () => Queue.end(queue).pipe(Effect.asVoid),
                 }),
               ),
           ),
