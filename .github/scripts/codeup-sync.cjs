@@ -47,9 +47,53 @@ async function reportConflict({ github, number, tag, paths }) {
   }
 }
 
+async function mergeIfReady({ github, core, number, sha, autoMerge }) {
+  const ci = await latestPrCi(github, sha);
+  if (!ci || ci.conclusion === "action_required")
+    core.info("Waiting for the PR workflow. Approve workflows to run on the PR if requested.");
+  if (autoMerge && ci?.conclusion === "success") {
+    // The merge API enforces branch protection; a matching SHA prevents merging a newer push.
+    try {
+      const { data: merged } = await github.rest.pulls.merge({
+        ...REPOSITORY,
+        pull_number: number,
+        sha,
+        merge_method: "merge",
+      });
+      if (!merged.merged) throw Error(merged.message);
+      // The dedicated credential emits a push event; dispatching here would build twice.
+    } catch (error) {
+      if (error.status !== 405 && error.status !== 409) throw error;
+      core.info(`Automatic merge is waiting for branch protection: ${error.message}`);
+    }
+  }
+}
+
 async function sync({ github, context, core, run = git, dryRun = false, autoMerge = false }) {
   if (`${context.repo.owner}/${context.repo.repo}` !== "U4F5Va6c/t3code")
     throw Error("Fork-only workflow.");
+  // CI completion finishes the existing sync; only scheduled/manual runs discover new Nightlies.
+  if (context.eventName === "workflow_run") {
+    const completed = context.payload.workflow_run;
+    if (
+      dryRun ||
+      !autoMerge ||
+      completed.event !== "pull_request" ||
+      completed.conclusion !== "success" ||
+      completed.head_branch !== BRANCH
+    )
+      return { status: "ignored" };
+    const { data: prs } = await github.rest.pulls.list({
+      ...REPOSITORY,
+      state: "open",
+      base: BASE,
+      head: `${REPOSITORY.owner}:${BRANCH}`,
+    });
+    const pr = prs.find((pr) => pr.head.sha === completed.head_sha);
+    if (!pr) return { status: "ignored" };
+    await mergeIfReady({ github, core, number: pr.number, sha: pr.head.sha, autoMerge });
+    return { status: "unchanged", number: pr.number, sha: pr.head.sha };
+  }
   const releases = await github.paginate(github.rest.repos.listReleases, {
     ...UPSTREAM,
     per_page: 100,
@@ -137,25 +181,7 @@ async function sync({ github, context, core, run = git, dryRun = false, autoMerg
     (await github.rest.pulls.create({ ...REPOSITORY, head: BRANCH, base: BASE, title, body })).data;
   if (pr && (changed || pr.title !== title))
     await github.rest.pulls.update({ ...REPOSITORY, pull_number: pr.number, title, body });
-  const ci = await latestPrCi(github, sha);
-  if (!ci || ci.conclusion === "action_required")
-    core.info("Waiting for the PR workflow. Approve workflows to run on the PR if requested.");
-  if (autoMerge && ci?.conclusion === "success") {
-    // The merge API enforces branch protection; a matching SHA prevents merging a newer push.
-    try {
-      const { data: merged } = await github.rest.pulls.merge({
-        ...REPOSITORY,
-        pull_number: current.number,
-        sha,
-        merge_method: "merge",
-      });
-      if (!merged.merged) throw Error(merged.message);
-      // The dedicated credential emits a push event; dispatching here would build twice.
-    } catch (error) {
-      if (error.status !== 405 && error.status !== 409) throw error;
-      core.info(`Automatic merge is waiting for branch protection: ${error.message}`);
-    }
-  }
+  await mergeIfReady({ github, core, number: current.number, sha, autoMerge });
   core.info(`Single sync PR: ${current.html_url} (${changed ? "updated" : "unchanged"})`);
   return { status: changed || !pr ? "updated" : "unchanged", number: current.number, sha };
 }

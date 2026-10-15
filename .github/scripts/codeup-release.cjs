@@ -75,7 +75,7 @@ async function digest(file, algorithm, encoding) {
 }
 
 async function assemble(inputDirectory, outputDirectory, metadata) {
-  const { parseUpdateManifest, mergeUpdateManifests, serializeUpdateManifest } = await import(
+  const { parseUpdateManifest, serializeUpdateManifest } = await import(
     pathToFileURL(path.resolve("scripts/lib/update-manifest.ts")).href
   );
   const files = await filesBelow(inputDirectory);
@@ -83,15 +83,13 @@ async function assemble(inputDirectory, outputDirectory, metadata) {
   if (!/^\d+\.\d+\.\d+-codeup\.\d{8}\.\d+$/.test(version) || !/^[a-f0-9]{40}$/.test(forkSha))
     throw Error("Invalid build identity.");
   const receipts = files.filter((file) => path.basename(file) === "COMMIT.txt");
-  if (receipts.length !== 4) throw Error("Expected all four build receipts.");
+  if (receipts.length !== 3) throw Error("Expected all three build receipts.");
   for (const receipt of receipts)
     if ((await fs.readFile(receipt, "utf8")).trim() !== forkSha)
       throw Error("Artifacts do not share the build commit.");
   const required = [
-    ...["arm64", "x64"].flatMap((arch) =>
-      ["dmg", "zip", "zip.blockmap"].map(
-        (ext) => `T3-Code-Codeup-Preview-${version}-${arch}.${ext}`,
-      ),
+    ...["dmg", "zip", "zip.blockmap"].map(
+      (ext) => `T3-Code-Codeup-Preview-${version}-arm64.${ext}`,
     ),
     `t3-${version}-darwin-arm64.tar.gz`,
     `t3-${version}-linux-x64.tar.gz`,
@@ -103,15 +101,14 @@ async function assemble(inputDirectory, outputDirectory, metadata) {
     await fs.copyFile(matches[0], path.join(outputDirectory, name));
   }
   const manifestPaths = files.filter((file) => path.basename(file) === "codeup-mac.yml");
-  if (manifestPaths.length !== 2) throw Error("Expected two macOS updater manifests.");
-  const manifests = await Promise.all(
-    manifestPaths.map(async (file) =>
-      parseUpdateManifest(await fs.readFile(file, "utf8"), file, "macOS"),
-    ),
+  if (manifestPaths.length !== 1) throw Error("Expected one macOS updater manifest.");
+  const manifest = parseUpdateManifest(
+    await fs.readFile(manifestPaths[0], "utf8"),
+    manifestPaths[0],
+    "macOS",
   );
-  const merged = mergeUpdateManifests(manifests[0], manifests[1], "macOS");
-  if (merged.version !== version) throw Error("Updater manifest version differs from the build.");
-  for (const asset of merged.files) {
+  if (manifest.version !== version) throw Error("Updater manifest version differs from the build.");
+  for (const asset of manifest.files) {
     if (!required.includes(asset.url)) throw Error(`Unexpected updater asset: ${asset.url}`);
     const file = path.join(outputDirectory, asset.url);
     if (
@@ -120,14 +117,11 @@ async function assemble(inputDirectory, outputDirectory, metadata) {
     )
       throw Error(`Updater digest mismatch: ${asset.url}`);
   }
-  for (const arch of ["arm64", "x64"])
-    if (
-      !merged.files.some((asset) => asset.url === `T3-Code-Codeup-Preview-${version}-${arch}.zip`)
-    )
-      throw Error(`Missing updater ZIP: ${arch}`);
+  if (!manifest.files.some((asset) => asset.url === `T3-Code-Codeup-Preview-${version}-arm64.zip`))
+    throw Error("Missing updater ZIP: arm64");
   await fs.writeFile(
     path.join(outputDirectory, "codeup-mac.yml"),
-    serializeUpdateManifest(merged, { platformLabel: "macOS" }),
+    serializeUpdateManifest(manifest, { platformLabel: "macOS" }),
   );
   await fs.writeFile(
     path.join(outputDirectory, MANIFEST),
@@ -146,7 +140,7 @@ async function assemble(inputDirectory, outputDirectory, metadata) {
 
 async function publish({ github, directory, metadata, candidate = false }) {
   const tag = candidate ? `codeup-test-${metadata.version}` : `v${metadata.version}`;
-  const body = `Codeup Preview ${metadata.version}\n\n- Fork commit: ${metadata.forkSha}\n- Upstream: [${metadata.upstream.tag}](https://github.com/pingdotgg/t3code/releases/tag/${metadata.upstream.tag}) (${metadata.upstream.sha})\n- [Build and verification](${metadata.runUrl})\n\n${candidate ? "This is an unmerged acceptance build, excluded from the update channel.\n\n" : ""}macOS arm64/x64: install the matching DMG. Standalone backends: macOS arm64 and Linux x64. SHA256SUMS covers the complete release.\n\nThe app has a separate Codeup identity and profile. Builds without Developer ID use ad-hoc signatures. After downloading an update, confirm installation to replace and reopen Preview while keeping its profile. The app must be in a writable folder; macOS may require an additional confirmation or manual DMG installation. Do not disable signature verification. Preserve the previous app/runtime and a stopped data backup for rollback; replacing a binary alone does not reverse database migrations.`;
+  const body = `Codeup Preview ${metadata.version}\n\n- Fork commit: ${metadata.forkSha}\n- Upstream: [${metadata.upstream.tag}](https://github.com/pingdotgg/t3code/releases/tag/${metadata.upstream.tag}) (${metadata.upstream.sha})\n- [Build and verification](${metadata.runUrl})\n\n${candidate ? "This is an unmerged acceptance build, excluded from the update channel.\n\n" : ""}macOS arm64 (Apple Silicon): install the DMG. Intel macOS builds are no longer published. Standalone backends: macOS arm64 and Linux x64. SHA256SUMS covers the complete release.\n\nThe app has a separate Codeup identity and profile. Builds without Developer ID use ad-hoc signatures. After downloading an update, confirm installation to replace and reopen Preview while keeping its profile. The app must be in a writable folder; macOS may require an additional confirmation or manual DMG installation. Do not disable signature verification. Preserve the previous app/runtime and a stopped data backup for rollback; replacing a binary alone does not reverse database migrations.`;
   let release;
   try {
     release = (await github.rest.repos.getReleaseByTag({ ...REPO, tag })).data;
