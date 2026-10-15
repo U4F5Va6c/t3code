@@ -78,7 +78,7 @@ async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codeup-release-"));
   const input = path.join(root, "input");
   const output = path.join(root, "output");
-  for (const name of ["macos-arm64", "macos-x64", "cli-darwin-arm64", "cli-linux-x64"]) {
+  for (const name of ["macos-arm64", "cli-darwin-arm64", "cli-linux-x64"]) {
     const dir = path.join(input, name);
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "COMMIT.txt"), metadata.forkSha);
@@ -98,20 +98,25 @@ async function fixture() {
   return { root, input, output };
 }
 
-test("assembly verifies both architectures, the same commit and updater digests", async () => {
+test("assembly verifies arm64 macOS, both backends, the same commit and updater digests", async () => {
   const f = await fixture();
   try {
     const names = await assemble(f.input, f.output, metadata);
-    assert.equal(names.length, 12);
+    assert.equal(names.length, 9);
+    assert.ok(names.includes(`t3-${metadata.version}-darwin-arm64.tar.gz`));
+    assert.ok(names.includes(`t3-${metadata.version}-linux-x64.tar.gz`));
+    const manifest = await fs.readFile(path.join(f.output, "codeup-mac.yml"), "utf8");
+    assert.match(manifest, /-arm64\.zip/);
+    assert.doesNotMatch(manifest, /-x64/);
     assert.match(
       await fs.readFile(path.join(f.output, "SHA256SUMS"), "utf8"),
       /codeup-release.json/,
     );
-    await fs.writeFile(path.join(f.input, "macos-x64/COMMIT.txt"), "c".repeat(40));
+    await fs.writeFile(path.join(f.input, "macos-arm64/COMMIT.txt"), "c".repeat(40));
     await assert.rejects(assemble(f.input, f.output, metadata), /build commit/);
-    await fs.writeFile(path.join(f.input, "macos-x64/COMMIT.txt"), metadata.forkSha);
+    await fs.writeFile(path.join(f.input, "macos-arm64/COMMIT.txt"), metadata.forkSha);
     await fs.writeFile(
-      path.join(f.input, "macos-x64", `T3-Code-Codeup-Preview-${metadata.version}-x64.zip`),
+      path.join(f.input, "macos-arm64", `T3-Code-Codeup-Preview-${metadata.version}-arm64.zip`),
       "tampered",
     );
     await assert.rejects(assemble(f.input, f.output, metadata), /digest mismatch/);
@@ -159,7 +164,7 @@ test("publication stays draft on upload failure and retries before becoming visi
     assert.equal(published, 0);
     fail = false;
     await publish({ github, directory: f.output, metadata });
-    assert.equal(release.assets.length, 12);
+    assert.equal(release.assets.length, 9);
     assert.equal(release.draft, false);
     const before = uploads;
     await publish({ github, directory: f.output, metadata });

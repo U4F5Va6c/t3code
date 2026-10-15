@@ -15,7 +15,7 @@ iOS/手机端原生集成、个人签名、真机构建和移动发布继续暂�
 - `main` 保持上游主线，不放定制提交；`codeup-integration` 是 Fork 默认分支和长期集成分支。
 - 功能分支从 `codeup-integration` 创建。Codeup Provider 与发布分别保持清楚的提交边界。
 
-`Codeup Nightly Sync` 每 6 小时检查官方**已发布的 Nightly tag**，也支持 Actions 手动触发和 dry run。始终复用 `sync/upstream-nightly` 的一个 PR；数天未合并时，新 Nightly 更新同一 PR 并重新检查，无需逐个合并中间版本。冲突会保留原远程分支，在 PR（首次同步则 #15）报告，并上传 patch；不会强推。默认人工合并。若选择自动合并，设置 Actions variable `CODEUP_AUTO_MERGE=true`；同步 CI 成功后，工作流通过受保护的合并 API 合入确切 SHA，由集成分支的 push 事件触发发布。它仍受必需检查及评审保护约束；未满足门槛会等待下次检查。
+`Codeup Nightly Sync` 每天凌晨 03:23（UTC+8，GitHub 调度可能延迟）检查官方**已发布的 Nightly tag**，也支持 Actions 手动触发和 dry run。始终复用 `sync/upstream-nightly` 的一个 PR；数天未合并时，新 Nightly 更新同一 PR 并重新检查，无需逐个合并中间版本。冲突会保留原远程分支，在 PR（首次同步则 #15）报告，并上传 patch；不会强推。默认人工合并。若选择自动合并，设置 Actions variable `CODEUP_AUTO_MERGE=true`；同步 CI 成功后的回调只处理已有 PR，不再检查更新的 Nightly；工作流通过受保护的合并 API 合入确切 SHA，由集成分支的 push 事件触发发布。它仍受必需检查及评审保护约束；未满足门槛会等待下次检查。
 
 定时工作流必须已合入默认分支。同步任务使用仓库 Actions secret `CODEUP_SYNC_TOKEN`：创建只允许访问本 Fork 的 fine-grained PAT，授予 **Contents、Workflows、Pull requests、Issues** 读写权限及 **Actions** 读取权限；配置有效期并在过期前替换 secret。Git 推送及 GitHub API 均使用该凭据。默认 `GITHUB_TOKEN` 无权同步 `.github/workflows/` 的变更，`actions: write` 不能替代 Workflows 权限；缺少 secret 时正常同步会立即报错，dry run 仍可只读检查。
 
@@ -75,11 +75,11 @@ vp run dev --home-dir "$PWD/.t3-codeup-dev"
 
 按根 AGENTS.md 运行改动范围内的 tests、lint、typecheck；全仓检查由配置好的 CI 承担。新增 Provider 应覆盖身份/URL、多页/限流、未知状态、写请求超时、MR SHA 与 CI 不匹配、多组织隔离；共享代码变化还需验证原有 GitHub 行为及受影响的移动类型/兼容路径。发布前验证 Web、桌面、目标机器上的 Agent 及远程连接；本期不要求移动原生功能或真机验收。
 
-Fork 只运行 `codeup-ci.yml` 与 `codeup-sync.yml`。`codeup-integration` 的 PR 与推送执行上游同款 lint、typecheck、Source Control 和更新链路定向测试，使用 GitHub 托管 runner。PR 还在 macOS arm64/x64 执行原生安装器测试，但不生成整套安装包；合并后的提交才完整打包、校验和发布。涉及打包配置的改动应先手动运行 Codeup CI 验收制品。上游工作流依赖 `blacksmith-*` runner 和发布 secrets，在 Fork 中全部手动禁用；默认 `GITHUB_TOKEN` 只读。web 与 server 大套件按根 AGENTS.md 在本地定向运行。不要导入上游生产 secrets。
+Fork 只运行 `codeup-ci.yml` 与 `codeup-sync.yml`。`codeup-integration` 的 PR 与推送执行上游同款 lint、typecheck、Source Control 和更新链路定向测试，使用 GitHub 托管 runner。PR 还在 macOS arm64 执行原生安装器测试，但不生成整套安装包；合并后的提交才完整打包、校验和发布。涉及打包配置的改动应先手动运行 Codeup CI 验收制品。上游工作流依赖 `blacksmith-*` runner 和发布 secrets，在 Fork 中全部手动禁用；默认 `GITHUB_TOKEN` 只读。web 与 server 大套件按根 AGENTS.md 在本地定向运行。不要导入上游生产 secrets。
 
 ## macOS Codeup Preview
 
-需要合并前的安装包时，在 Actions 手动运行 Codeup CI 并选择 PR 分支。Codeup CI 从同一 SHA 构建 Apple Silicon（arm64）和 Intel（x64）的 DMG/ZIP，以及 Mac arm64、Linux x64 独立后端。基础版本取自已合入的上游 Nightly tag，版本为 `X.Y.Z-codeup.<提交日期>.<Actions run ID>`；run ID 跨工作流递增，重试保持原版本。图标、启动素材和星空背景复用 Nightly，应用身份保持独立。
+需要合并前的安装包时，在 Actions 手动运行 Codeup CI 并选择 PR 分支。Codeup CI 从同一 SHA 构建 Apple Silicon（arm64）的 DMG/ZIP，以及 Mac arm64、Linux x64 独立后端。基础版本取自已合入的上游 Nightly tag，版本为 `X.Y.Z-codeup.<提交日期>.<Actions run ID>`；run ID 跨工作流递增，重试保持原版本。图标、启动素材和星空背景复用 Nightly，应用身份保持独立。Intel（x64）macOS 不再构建或发布新包；旧 Release 保留。
 在该次手动 Actions 运行中下载对应 `codeup-preview-macos-*` artifact，解压后核对
 `COMMIT.txt` 与 PR head、`SHA256SUMS.txt` 与 DMG。制品保留 30 天。
 
@@ -142,7 +142,7 @@ Release 包内嵌 JS，不需要 Metro 常驻；`ios:dev` 是迭代调试方式�
 
 ## 发布、更新与回退
 
-合入默认分支后，Codeup CI 在检查与四种制品全部完成后合并两种架构的 `codeup-mac.yml`，验证 ZIP 的 SHA512，再生成 `SHA256SUMS` 与 `codeup-release.json`。所有附件先上传草稿 Release，最后才发布；失败不暴露半成品，同一 SHA 不重复发布。Release 中保留上游 tag/SHA、Fork SHA 和 CI 链接。手动 dispatch 集成分支可重试发布；前一发布不会删除。
+合入默认分支后，Codeup CI 在检查与三种制品（macOS arm64 桌面、macOS arm64 后端、Linux x64 后端）全部完成后校验单个 `codeup-mac.yml`，验证 ZIP 的 SHA512，再生成 `SHA256SUMS` 与 `codeup-release.json`。所有附件先上传草稿 Release，最后才发布；失败不暴露半成品，同一 SHA 不重复发布。Release 中保留上游 tag/SHA、Fork SHA 和 CI 链接。手动 dispatch 集成分支可重试发布；前一发布不会删除。
 
 独立后端的默认 home 是 `~/.t3-codeup`，launchd label 为 `io.github.u4f5va6c.t3code.codeup.service`，systemd unit 为 `t3code-codeup.service`。Fork CLI 的 `service`、`update`、`uninstall` 使用这些身份，拒绝跨到官方发行源。首次从旧的固定 `serve` 服务迁移到受支持 launcher 时，先确认服务 home、端口 owner 和活跃任务，备份并执行新 Fork CLI 的 `service install`；迁移会重启服务，不能在依赖该后端的活跃任务中直接执行。之后 Connections 与 `t3 update` 可复用 staged runtime、数据库备份、健康试启动及失败回退。
 

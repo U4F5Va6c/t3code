@@ -137,20 +137,12 @@ jobs:
         run: node --test .github/scripts/codeup-*.test.cjs
 
   macos-preview:
-    name: Codeup macOS (${{ matrix.arch }})
+    name: Codeup macOS (arm64)
     needs: resolve
     # PRs keep native installer coverage without packaging another full release.
     if: needs.resolve.outputs.build == 'true' || github.event_name == 'pull_request'
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-15
-          - arch: x64
-            runner: macos-15-intel
     steps:
       - uses: actions/checkout@v6
         with:
@@ -163,7 +155,6 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
-          # Restoring/saving the full workspace store costs minutes on Intel runners.
           cache: false
           run-install: false
       - name: Install desktop build dependencies
@@ -188,7 +179,7 @@ jobs:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: U4F5Va6c/t3code
           T3CODE_CODEUP_RELEASE: ${{ github.ref == 'refs/heads/codeup-integration' || inputs.release_candidate == true }}
         run: |
-          vp run dist:desktop:artifact --platform mac --target dmg --arch '${{ matrix.arch }}' --build-version "$CODEUP_VERSION" --output-dir artifacts --verbose
+          vp run dist:desktop:artifact --platform mac --target dmg --arch arm64 --build-version "$CODEUP_VERSION" --output-dir artifacts --verbose
           shasum -a 256 artifacts/*.dmg > artifacts/SHA256SUMS.txt
           git rev-parse HEAD > artifacts/COMMIT.txt
       - name: Verify app inside DMG
@@ -201,14 +192,14 @@ jobs:
           hdiutil attach "${preview_dmgs[0]}" -readonly -nobrowse -mountpoint "$preview_mount"
           trap 'hdiutil detach "$preview_mount"' EXIT
           preview_app="$preview_mount/T3 Code (Codeup Preview).app"
-          preview_report="artifacts/SIGNATURE-${{ matrix.arch }}.txt"
+          preview_report="artifacts/SIGNATURE-arm64.txt"
           codesign --display --verbose=4 "$preview_app" 2>&1 | tee "$preview_report"
           grep -q '^Signature=adhoc$' "$preview_report"
           codesign --verify --deep --strict --verbose=2 "$preview_app" 2>&1 | tee -a "$preview_report"
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$preview_app/Contents/Info.plist")" = 'io.github.u4f5va6c.t3code.codeup-preview'
           ELECTRON_RUN_AS_NODE=1 "$preview_app/Contents/MacOS/T3 Code (Codeup Preview)" -e 'if (!process.versions.electron) process.exit(1); console.log(`Packaged Electron ${process.versions.electron} (${process.arch}) started`)' | tee -a "$preview_report"
       - name: Build Mac standalone backend
-        if: needs.resolve.outputs.build == 'true' && matrix.arch == 'arm64'
+        if: needs.resolve.outputs.build == 'true'
         env:
           VP_NODE_VERSION: "26.8.2"
         run: |
@@ -220,7 +211,7 @@ jobs:
           shasum -a 256 release-cli/*.tar.gz > release-cli/SHA256SUMS.txt
           git rev-parse HEAD > release-cli/COMMIT.txt
       - name: Upload Mac standalone backend
-        if: needs.resolve.outputs.build == 'true' && matrix.arch == 'arm64'
+        if: needs.resolve.outputs.build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: codeup-preview-cli-darwin-arm64-${{ needs.resolve.outputs.sha }}
@@ -232,7 +223,7 @@ jobs:
         if: needs.resolve.outputs.build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: codeup-preview-macos-${{ matrix.arch }}-${{ needs.resolve.outputs.sha }}
+          name: codeup-preview-macos-arm64-${{ needs.resolve.outputs.sha }}
           path: |
             artifacts/*.dmg
             artifacts/*.zip

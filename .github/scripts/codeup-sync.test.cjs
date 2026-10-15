@@ -80,7 +80,11 @@ function fixture() {
         getCommit: async ({ ref }) => ({ data: { sha: command(upstream, "rev-parse", ref) } }),
       },
       pulls: {
-        list: async () => ({ data: pr ? [pr] : [] }),
+        list: async () => ({
+          data: pr
+            ? [{ ...pr, head: { sha: command(work, "rev-parse", "origin/sync/upstream-nightly") } }]
+            : [],
+        }),
         create: async (input) => {
           creates++;
           pr = { ...input, number: 42, html_url: "https://github.com/U4F5Va6c/t3code/pull/42" };
@@ -259,5 +263,58 @@ test("automatic merge still respects branch protection and a changed head", asyn
     } finally {
       f.cleanup();
     }
+  }
+});
+
+test("CI completion merges only the tested sync head without discovering a newer Nightly", async () => {
+  const f = fixture();
+  try {
+    f.addNightly(1);
+    await sync({ ...f, context, core });
+    const sha = f.run("rev-parse", "HEAD");
+    const completed = {
+      event: "pull_request",
+      head_sha: sha,
+      head_branch: "sync/upstream-nightly",
+      conclusion: "success",
+    };
+    f.runs.push(completed);
+    f.addNightly(2);
+    f.github.paginate = async () => assert.fail("CI completion must not discover Nightlies");
+    let merges = 0;
+    f.github.rest.pulls.merge = async (input) => {
+      assert.equal(input.sha, sha);
+      assert.equal(input.pull_number, 42);
+      merges++;
+      return { data: { merged: true } };
+    };
+    const finish = (workflowRun, options = {}) =>
+      sync({
+        ...f,
+        core,
+        autoMerge: true,
+        context: { ...context, eventName: "workflow_run", payload: { workflow_run: workflowRun } },
+        run: () => assert.fail("CI completion must not change the sync branch"),
+        ...options,
+      });
+    for (const patch of [
+      { event: "workflow_dispatch" },
+      { conclusion: "failure" },
+      { head_branch: "other" },
+      { head_sha: "0".repeat(40) },
+    ])
+      assert.equal((await finish({ ...completed, ...patch })).status, "ignored");
+    assert.equal((await finish(completed, { autoMerge: false })).status, "ignored");
+    assert.equal((await finish(completed, { dryRun: true })).status, "ignored");
+    assert.equal(merges, 0);
+    f.runs.unshift({ ...completed, conclusion: null });
+    await finish(completed);
+    assert.equal(merges, 0);
+    f.runs.shift();
+    await finish(completed);
+    assert.equal(merges, 1);
+    assert.deepEqual(f.counts(), { creates: 1, dispatches: 0 });
+  } finally {
+    f.cleanup();
   }
 });

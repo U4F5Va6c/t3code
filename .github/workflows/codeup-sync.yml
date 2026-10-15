@@ -2,7 +2,7 @@ name: Codeup Nightly Sync
 
 on:
   schedule:
-    - cron: "23 */6 * * *"
+    - cron: "23 19 * * *"
   workflow_run:
     workflows: [Codeup CI]
     types: [completed]
