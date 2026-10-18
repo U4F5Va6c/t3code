@@ -17,7 +17,7 @@ import { Circle, CircleCheck } from "lucide";
 import { useRef, useState } from "react";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
-import { formatRelativeTimeLabel } from "~/timestampFormat";
+import { RelativeTime } from "~/components/RelativeTime";
 import { cn } from "~/lib/utils";
 
 import { Button } from "../ui/button";
@@ -323,7 +323,9 @@ export function ReviewThreadCard({
                     provider={sourceControlClients.findByPublicHost(reference.host ?? "")?.kind}
                     actor={comment.author}
                   />
-                  <span>{formatRelativeTimeLabel(comment.createdAt)}</span>
+                  <span>
+                    <RelativeTime timestamp={comment.createdAt} />
+                  </span>
                   <PullRequestReactionBar
                     className="ml-auto justify-end"
                     reactions={comment.reactions ?? []}
