@@ -106,7 +106,6 @@ jobs:
           apps/server/src/mcp/toolkits/core.test.ts
           apps/server/src/mcp/McpHttpServer.test.ts
           apps/server/src/auth/RpcAuthorization.test.ts
-          apps/web/src/components/pullRequest/usePullRequestReviewDrafts.test.ts
           apps/web/src/lib/diffRendering.test.ts
           apps/web/src/components/pullRequest/pullRequestList.logic.test.ts
           apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
@@ -133,6 +132,10 @@ jobs:
           apps/web/src/components/desktopUpdate.logic.test.ts
           apps/web/src/components/sidebar/updateEverything.logic.test.ts
           apps/mobile/src/features/settings/environment-maintenance.test.ts
+      - name: Install Chromium for web browser tests
+        run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
+      - name: Test compiled Codeup private review drafts
+        run: vp run --filter @t3tools/web test src/components/pullRequest/usePullRequestReviewDrafts.browser.test.ts
       - name: Test Fork sync and atomic release publication
         run: node --test .github/scripts/codeup-*.test.cjs
 
