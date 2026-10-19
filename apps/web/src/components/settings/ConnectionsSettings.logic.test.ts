@@ -6,6 +6,7 @@ import {
   getReleaseCheckStatus,
   isQrShareableEndpoint,
   isWslSettingsRowVisible,
+  missingTailscaleEndpointDescription,
   selectQrEndpointOption,
   togglePairingScopeSelection,
 } from "./ConnectionsSettings.logic";
@@ -269,5 +270,22 @@ describe("getReleaseCheckStatus", () => {
     { label: "refreshing", data: "1.0.0", isPending: true, isSuccess: true, expected: "checking" },
   ])("handles $label", ({ expected, ...query }) => {
     expect(getReleaseCheckStatus(query)).toBe(expected);
+  });
+});
+
+describe("missingTailscaleEndpointDescription", () => {
+  it("explains that detection waits for Network access when the probe was skipped", () => {
+    expect(
+      missingTailscaleEndpointDescription({ mode: "local-only", tailscaleServeEnabled: false }),
+    ).toBe("Turn on Network access to detect Tailscale.");
+  });
+
+  it.each([
+    { mode: "network-accessible", tailscaleServeEnabled: false },
+    { mode: "local-only", tailscaleServeEnabled: true },
+  ] as const)("asks to start Tailscale when it was probed and not found (%o)", (state) => {
+    expect(missingTailscaleEndpointDescription(state)).toBe(
+      "Start Tailscale to set up HTTPS access through MagicDNS.",
+    );
   });
 });

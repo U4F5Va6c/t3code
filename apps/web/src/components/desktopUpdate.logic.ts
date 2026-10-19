@@ -3,7 +3,24 @@ import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "@t3tools/shared/codeupPr
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
-const DESKTOP_RELEASE_HISTORY_URL = "https://github.com/pingdotgg/t3code/releases";
+const DEFAULT_DESKTOP_RELEASE_REPOSITORY = "pingdotgg/t3code";
+const GITHUB_REPOSITORY_SEGMENT = /^[A-Za-z0-9._-]+$/u;
+
+function isValidRepositorySegment(value: string | undefined): value is string {
+  return (
+    value !== undefined && value !== "." && value !== ".." && GITHUB_REPOSITORY_SEGMENT.test(value)
+  );
+}
+
+function desktopReleaseRepositoryUrl(repository: string | undefined): string {
+  const configuredRepository = repository?.trim() ?? "";
+  const [owner, name, ...extra] = configuredRepository.split("/");
+  const releaseRepository =
+    isValidRepositorySegment(owner) && isValidRepositorySegment(name) && extra.length === 0
+      ? configuredRepository
+      : DEFAULT_DESKTOP_RELEASE_REPOSITORY;
+  return `https://github.com/${releaseRepository}/releases`;
+}
 
 /**
  * The main process fills `downloadedVersion` from the updater's `update-downloaded`
@@ -14,16 +31,22 @@ export function getDesktopUpdateDownloadedVersion(state: DesktopUpdateState): st
   return state.downloadedVersion ?? state.availableVersion;
 }
 
-export function getDesktopUpdateReleaseUrl(version: string | null): string | null {
+export function getDesktopUpdateReleaseUrl(
+  version: string | null,
+  repository: string | undefined = import.meta.env.T3CODE_DESKTOP_UPDATE_REPOSITORY,
+): string | null {
   const normalizedVersion = version?.trim();
   if (!normalizedVersion) return null;
-  return `${getDesktopUpdateReleaseHistoryUrl(normalizedVersion)}/tag/v${encodeURIComponent(normalizedVersion)}`;
+  return `${getDesktopUpdateReleaseHistoryUrl(repository, normalizedVersion)}/tag/v${encodeURIComponent(normalizedVersion)}`;
 }
 
-export function getDesktopUpdateReleaseHistoryUrl(version?: string): string {
-  return isCodeupPreviewVersion(version)
-    ? `https://github.com/${CODEUP_PREVIEW.repository}/releases`
-    : DESKTOP_RELEASE_HISTORY_URL;
+export function getDesktopUpdateReleaseHistoryUrl(
+  repository: string | undefined = import.meta.env.T3CODE_DESKTOP_UPDATE_REPOSITORY,
+  version?: string,
+): string {
+  return desktopReleaseRepositoryUrl(
+    isCodeupPreviewVersion(version) ? CODEUP_PREVIEW.repository : repository,
+  );
 }
 
 export function resolveDesktopUpdateButtonAction(
