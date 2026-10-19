@@ -70,6 +70,7 @@ import {
   getReleaseCheckStatus,
   isQrShareableEndpoint,
   isWslSettingsRowVisible,
+  missingTailscaleEndpointDescription,
   selectQrEndpointOption,
   togglePairingScopeSelection,
 } from "./ConnectionsSettings.logic";
@@ -3312,7 +3313,7 @@ export function ConnectionsSettings() {
           ? tailscaleHttpsEndpoint.status === "available"
             ? tailscaleHttpsEndpoint.httpBaseUrl
             : "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL."
-          : "Start Tailscale to set up HTTPS access through MagicDNS."
+          : missingTailscaleEndpointDescription(desktopServerExposureState)
       }
       control={
         tailscaleHttpsEndpoint ? (

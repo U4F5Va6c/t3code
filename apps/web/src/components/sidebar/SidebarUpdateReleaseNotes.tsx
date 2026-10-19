@@ -110,7 +110,7 @@ export function SidebarUpdateReleaseNotes({
           <div>
             <Separator className="my-3" />
             <ReleaseLink
-              releaseUrl={getDesktopUpdateReleaseHistoryUrl(state.currentVersion)}
+              releaseUrl={getDesktopUpdateReleaseHistoryUrl(undefined, state.currentVersion)}
               shell={shell}
             >
               {`${state.omittedReleaseCount} older ${state.omittedReleaseCount === 1 ? "release" : "releases"} on GitHub`}
