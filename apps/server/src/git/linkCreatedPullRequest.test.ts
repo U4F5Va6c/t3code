@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as Deferred from "effect/Deferred";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
 import * as GitManager from "./GitManager.ts";
@@ -319,6 +320,7 @@ it.effect(
       const workflowLayer = GitWorkflowService.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
+            NodeFileSystem.layer,
             Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
               resolve: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),
             }),

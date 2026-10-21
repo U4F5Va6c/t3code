@@ -1,5 +1,5 @@
-import { act, createElement } from "react";
-import { createRoot } from "react-dom/client";
+import { createElement } from "react";
+import { render } from "../../../test/render";
 import { expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 const connection = vi.hoisted(() => ({ phase: "offline" }));
@@ -50,15 +50,11 @@ it("isolates private drafts across actual viewers and environments", () => {
 });
 
 it("waits for connection and recovers a failed private read on reconnect without retrying writes", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const reference = {
     projectId: ProjectId.make("reconnect-project"),
     repository: "org/repo",
     number: 1,
   };
-  const container = document.createElement("div");
-  document.body.append(container);
-  const renderer = createRoot(container);
   function Probe({ phase }: { phase: string }) {
     const drafts = usePullRequestReviewDrafts(
       EnvironmentId.make("reconnect-env"),
@@ -81,35 +77,23 @@ it("waits for connection and recovers a failed private read on reconnect without
     },
   });
   connection.phase = "offline";
-  try {
-    await act(() => {
-      renderer.render(createElement(Probe, { phase: connection.phase }));
-    });
-    expect(commands.list).not.toHaveBeenCalled();
-    expect(container.textContent).toBe(`${connection.phase}:false:`);
-    connection.phase = "connected";
-    await act(() => {
-      renderer.render(createElement(Probe, { phase: connection.phase }));
-    });
-    expect(commands.list).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toBe(`${connection.phase}:false:`);
-    connection.phase = "offline";
-    await act(() => {
-      renderer.render(createElement(Probe, { phase: connection.phase }));
-    });
-    expect(commands.list).toHaveBeenCalledTimes(1);
-    connection.phase = "connected";
-    await act(() => {
-      renderer.render(createElement(Probe, { phase: connection.phase }));
-    });
-    expect(commands.list).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toBe("connected:true:head");
-    expect(commands.create).not.toHaveBeenCalled();
-    expect(commands.update).not.toHaveBeenCalled();
-    expect(commands.remove).not.toHaveBeenCalled();
-  } finally {
-    await act(() => renderer.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
+  await using screen = await render(createElement(Probe, { phase: connection.phase }), {
+    router: false,
+  });
+  expect(commands.list).not.toHaveBeenCalled();
+  expect(screen.container.textContent).toBe(`${connection.phase}:false:`);
+  connection.phase = "connected";
+  await screen.rerender(createElement(Probe, { phase: connection.phase }));
+  expect(commands.list).toHaveBeenCalledTimes(1);
+  expect(screen.container.textContent).toBe(`${connection.phase}:false:`);
+  connection.phase = "offline";
+  await screen.rerender(createElement(Probe, { phase: connection.phase }));
+  expect(commands.list).toHaveBeenCalledTimes(1);
+  connection.phase = "connected";
+  await screen.rerender(createElement(Probe, { phase: connection.phase }));
+  expect(commands.list).toHaveBeenCalledTimes(2);
+  expect(screen.container.textContent).toBe("connected:true:head");
+  expect(commands.create).not.toHaveBeenCalled();
+  expect(commands.update).not.toHaveBeenCalled();
+  expect(commands.remove).not.toHaveBeenCalled();
 });

@@ -33,11 +33,15 @@ import {
   canDeletePullRequestBranch,
   buildFixFindingsHandoff,
   groupPullRequestTimelineConversations,
+  filterPullRequestConversationItems,
+  pagePullRequestConversationItems,
+  pullRequestConversationItemComments,
+  pullRequestConversationItems,
   handoffPrompt,
   handoffReviewComments,
   stripPullRequestHandoffReferences,
   isPullRequestVerdictStale,
-  isFinishedPullRequestComment,
+  isPullRequestCommentFinished,
   pullRequestCommentResolution,
   isStackedPullRequestBase,
   loadingPullRequestCheckoutCommand,
@@ -82,9 +86,9 @@ describe("conversation resolution in the summary", () => {
 
   it("leaves ordinary comments unclassified and does not treat an outdated remark as resolved", () => {
     expect(pullRequestCommentResolution(comment)).toBeUndefined();
-    expect(isFinishedPullRequestComment(comment)).toBe(false);
+    expect(isPullRequestCommentFinished(comment)).toBe(false);
     expect(
-      isFinishedPullRequestComment({
+      isPullRequestCommentFinished({
         ...comment,
         resolution: { threadId: "root", isResolved: false, isOutdated: true },
       }),
@@ -97,15 +101,28 @@ describe("conversation resolution in the summary", () => {
       resolution: { threadId: "root", isResolved: true, isOutdated: false },
     };
     expect(pullRequestCommentResolution(resolved)?.threadId).toBe("root");
-    expect(isFinishedPullRequestComment(resolved)).toBe(true);
+    expect(isPullRequestCommentFinished(resolved)).toBe(true);
     expect(
-      isFinishedPullRequestComment({
+      filterPullRequestConversationItems(pullRequestConversationItems([resolved], []), {
+        bots: true,
+        resolved: false,
+      }),
+    ).toEqual([]);
+    const reopened = { ...resolved, resolution: { ...resolved.resolution, isResolved: false } };
+    expect(
+      filterPullRequestConversationItems(pullRequestConversationItems([reopened], []), {
+        bots: true,
+        resolved: false,
+      }).map((item) => item.id),
+    ).toEqual([reopened.id]);
+    expect(
+      isPullRequestCommentFinished({
         ...resolved,
         resolution: { ...resolved.resolution, isResolved: false },
       }),
     ).toBe(false);
     expect(
-      isFinishedPullRequestComment({ ...comment, kind: "review", reviewState: "DISMISSED" }),
+      isPullRequestCommentFinished({ ...comment, kind: "review", reviewState: "DISMISSED" }),
     ).toBe(true);
   });
 
@@ -126,7 +143,7 @@ describe("conversation resolution in the summary", () => {
       isOutdated: false,
       canResolve: false,
     });
-    expect(isFinishedPullRequestComment(comment, thread)).toBe(true);
+    expect(isPullRequestCommentFinished(comment, thread)).toBe(true);
   });
 });
 
@@ -784,6 +801,144 @@ describe("pull request timeline", () => {
       ["event", "1baf7bdcafe"],
       ["event", "created"],
     ]);
+  });
+});
+
+describe("review thread conversations", () => {
+  const bot = { login: "review[bot]", name: null, avatarUrl: null, isBot: true };
+  const comment = (id: string, day: number): PullRequestComment => ({
+    ...TIMELINE_SOURCE.comments[0]!,
+    id,
+    kind: "review-comment",
+    body: `Current ${id}`,
+    createdAt: `2026-07-0${day}T12:00:00Z`,
+    url: `https://example.test/pull/1#${id}`,
+    path: "src/a.ts",
+  });
+  const finding = { ...comment("finding", 2), author: bot };
+  const reply = {
+    ...comment("reply", 4),
+    reactions: [
+      { content: "thumbs-up" as const, count: 2, actors: ["author"], viewerHasReacted: true },
+    ],
+  };
+  const lastReply = comment("last-reply", 6);
+  const loose = TIMELINE_SOURCE.comments[0]!;
+  const comments = [finding, loose, reply, lastReply];
+  const thread: PullRequestReviewThread = {
+    id: "thread",
+    path: "src/a.ts",
+    line: 7,
+    side: "right",
+    isResolved: false,
+    isOutdated: true,
+    comments: [lastReply, { ...finding, body: "Stale finding" }, reply],
+  };
+
+  it("keeps a timeline finding and its replies in one row at the finding time", () => {
+    const events = buildPullRequestTimeline({
+      ...TIMELINE_SOURCE,
+      comments,
+      reviewThreads: [thread],
+    });
+    expect(events.map((event) => event.id)).toEqual(["c1", "finding", "1baf7bdcafe", "created"]);
+    expect(events[1]).toMatchObject({
+      id: finding.id,
+      at: finding.createdAt,
+      body: finding.body,
+      url: finding.url,
+      thread: {
+        path: thread.path,
+        line: 7,
+        isOutdated: true,
+        replies: [
+          { id: reply.id, body: reply.body, url: reply.url, reactions: reply.reactions },
+          { id: lastReply.id, body: lastReply.body, url: lastReply.url },
+        ],
+      },
+    });
+    expect(groupPullRequestTimelineConversations(events).map((row) => row.kind)).toEqual([
+      "comments",
+      "event",
+      "event",
+      "event",
+    ]);
+    expect(events[0]).toEqual(buildPullRequestTimeline(TIMELINE_SOURCE)[0]);
+  });
+
+  it("orders and pages whole Summary conversations while retaining editable comment copies", () => {
+    const earlier = { ...loose, id: "earlier", createdAt: "2026-07-01T00:00:00Z" };
+    const items = pullRequestConversationItems([earlier, ...comments], [thread]);
+    expect(orderPullRequestComments(items, "oldest").map((item) => item.id)).toEqual([
+      "earlier",
+      "thread",
+      "c1",
+    ]);
+    expect(orderPullRequestComments(items, "newest").map((item) => item.id)).toEqual([
+      "c1",
+      "thread",
+      "earlier",
+    ]);
+    const page = pagePullRequestConversationItems(items, 2);
+    expect(page.hidden).toBe(1);
+    const grouped = page.shown[0]!;
+    expect(grouped.createdAt).toBe(finding.createdAt);
+    expect(pullRequestConversationItemComments(grouped)).toEqual([finding, reply, lastReply]);
+    expect(pullRequestConversationItemComments(grouped)[0]).toBe(finding);
+    expect(pullRequestConversationItemComments(grouped)[1]).toBe(reply);
+    expect(pagePullRequestConversationItems(items, 1)).toEqual({ shown: [items[2]], hidden: 2 });
+    expect(pullRequestConversationItemComments(items[2]!)).toEqual([loose]);
+    expect(pullRequestConversationItems(comments, []).map((item) => item.id)).toEqual(
+      comments.map((entry) => entry.id),
+    );
+  });
+
+  it("filters whole conversations when any member matches, including resolved and dismissed reviews", () => {
+    const botOnly = { ...comment("bot-only", 7), author: bot };
+    const dismissed = {
+      ...comment("dismissed", 8),
+      kind: "review" as const,
+      reviewState: "DISMISSED",
+    };
+    const items = pullRequestConversationItems(
+      [...comments, botOnly, dismissed],
+      [thread, { ...thread, id: "bot-thread", comments: [botOnly] }],
+    );
+    const kept = filterPullRequestConversationItems(items, { bots: false, resolved: false });
+    expect(kept.map((item) => item.id)).toEqual(["thread", "c1"]);
+    expect(pullRequestConversationItemComments(kept[0]!)).toEqual([finding, reply, lastReply]);
+    expect(filterPullRequestConversationItems(items, { bots: true, resolved: true })).toEqual(
+      items,
+    );
+    const resolved = pullRequestConversationItems(comments, [{ ...thread, isResolved: true }]);
+    expect(
+      filterPullRequestConversationItems(resolved, { bots: true, resolved: false }).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["c1"]);
+    expect(filterPullRequestConversationItems(resolved, { bots: false, resolved: true })).toEqual(
+      resolved,
+    );
+  });
+
+  it("distinguishes unloaded replies from complete threads, even when the host only supplies a cursor", () => {
+    const timeline = (reviewThread: PullRequestReviewThread) =>
+      buildPullRequestTimeline({
+        ...TIMELINE_SOURCE,
+        comments,
+        reviewThreads: [reviewThread],
+      }).find((event) => event.id === finding.id)?.thread;
+    expect(timeline({ ...thread, commentCount: 5 })).toMatchObject({
+      moreReplies: 2,
+      hasMoreReplies: true,
+      url: finding.url,
+    });
+    expect(timeline({ ...thread, nextCommentsCursor: "next" })).toMatchObject({
+      moreReplies: 0,
+      hasMoreReplies: true,
+      url: finding.url,
+    });
+    expect(timeline(thread)).toMatchObject({ moreReplies: 0, hasMoreReplies: false });
   });
 });
 

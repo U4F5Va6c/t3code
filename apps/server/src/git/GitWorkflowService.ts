@@ -9,6 +9,7 @@ import { refreshPushedPullRequests } from "./refreshPushedPullRequests.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as FileSystem from "effect/FileSystem";
 
 import {
   CommandId,
@@ -40,6 +41,7 @@ import {
 import * as GitManager from "./GitManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
@@ -120,6 +122,14 @@ export class GitWorkflowService extends Context.Service<
       { readonly commitSha: string; readonly remoteRefName: string },
       GitCommandError
     >;
+    readonly resolveWorktreeBaseRemote: GitVcsDriver.GitVcsDriver["Service"]["resolveWorktreeBaseRemote"];
+    readonly fetchWorktreeBaseCommit: (input: {
+      readonly cwd: string;
+      readonly refName: string;
+    }) => Effect.Effect<
+      { readonly commitSha: string; readonly remoteRefName: string } | null,
+      GitCommandError
+    >;
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
@@ -185,6 +195,14 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  const fileSystem = yield* FileSystem.FileSystem;
+
+  // Nested projects and path aliases must share the checkout's branch-mutation lease.
+  const withCheckoutLease = <A, E, R>(rootPath: string, effect: Effect.Effect<A, E, R>) =>
+    fileSystem.realPath(rootPath).pipe(
+      Effect.orElseSucceed(() => rootPath),
+      Effect.flatMap((cwd) => withWorkspaceLease(cwd, effect)),
+    );
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
     operation: string,
@@ -208,6 +226,7 @@ export const make = Effect.gen(function* () {
         detail: `The ${operation} workflow currently supports Git repositories only; detected ${handle.kind}. (${cwd})`,
       });
     }
+    return handle;
   });
 
   const ensureGitCommand = Effect.fn("GitWorkflowService.ensureGitCommand")(function* (
@@ -234,6 +253,7 @@ export const make = Effect.gen(function* () {
         detail: `The ${operation} command currently supports Git repositories only; detected ${handle.kind}.`,
       });
     }
+    return handle;
   });
 
   const detectGitRepositoryForStatus = Effect.fn("GitWorkflowService.detectGitRepositoryForStatus")(
@@ -305,12 +325,19 @@ export const make = Effect.gen(function* () {
     options?: GitManager.GitRunStackedActionOptions,
   ) =>
     ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
-      Effect.andThen(gitManager.runStackedAction(input, options)),
+      Effect.flatMap((handle) =>
+        input.featureBranch
+          ? withCheckoutLease(
+              handle.repository.rootPath,
+              gitManager.runStackedAction(input, options),
+            )
+          : gitManager.runStackedAction(input, options),
+      ),
     );
 
   return GitWorkflowService.of({
-    runStackedActionAndRefresh: (input, options) =>
-      Effect.gen(function* () {
+    runStackedActionAndRefresh: Effect.fn("GitWorkflowService.runStackedActionAndRefresh")(
+      function* (input, options) {
         const result = yield* runStackedAction(input, options);
         if (input.threadId !== undefined) {
           const crypto = yield* Crypto.Crypto;
@@ -329,7 +356,8 @@ export const make = Effect.gen(function* () {
           .refreshStatus(input.cwd)
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach);
         return result;
-      }),
+      },
+    ),
     isRepository: (cwd) =>
       registry.detect({ cwd }).pipe(
         Effect.map((handle) => handle?.kind === "git"),
@@ -406,10 +434,17 @@ export const make = Effect.gen(function* () {
       "GitWorkflowService.resolvePullRequest",
       gitManager.resolvePullRequest,
     ),
-    preparePullRequestThread: routeGitManager(
-      "GitWorkflowService.preparePullRequestThread",
-      gitManager.preparePullRequestThread,
-    ),
+    preparePullRequestThread: (input) =>
+      ensureGit("GitWorkflowService.preparePullRequestThread", input.cwd).pipe(
+        Effect.flatMap((handle) =>
+          input.mode === "local"
+            ? withCheckoutLease(
+                handle.repository.rootPath,
+                gitManager.preparePullRequestThread(input),
+              )
+            : gitManager.preparePullRequestThread(input),
+        ),
+      ),
     listRefs: (input) =>
       detectGitRepositoryForCommand("GitWorkflowService.listRefs", input.cwd).pipe(
         Effect.flatMap((isGitRepository) =>
@@ -440,6 +475,14 @@ export const make = Effect.gen(function* () {
       ensureGitCommand("GitWorkflowService.resolveRemoteTrackingCommit", input.cwd).pipe(
         Effect.andThen(git.resolveRemoteTrackingCommit(input)),
       ),
+    resolveWorktreeBaseRemote: (input) =>
+      ensureGitCommand("GitWorkflowService.resolveWorktreeBaseRemote", input.cwd).pipe(
+        Effect.andThen(git.resolveWorktreeBaseRemote(input)),
+      ),
+    fetchWorktreeBaseCommit: (input) =>
+      ensureGitCommand("GitWorkflowService.fetchWorktreeBaseCommit", input.cwd).pipe(
+        Effect.andThen(git.fetchWorktreeBaseCommit(input)),
+      ),
     removeWorktree: (input) =>
       ensureGitCommand("GitWorkflowService.removeWorktree", input.cwd).pipe(
         Effect.andThen(git.removeWorktree(input)),
@@ -454,11 +497,17 @@ export const make = Effect.gen(function* () {
       ),
     createRef: (input) =>
       ensureGitCommand("GitWorkflowService.createRef", input.cwd).pipe(
-        Effect.andThen(git.createRef(input)),
+        Effect.flatMap((handle) =>
+          input.switchRef
+            ? withCheckoutLease(handle.repository.rootPath, git.createRef(input))
+            : git.createRef(input),
+        ),
       ),
     switchRef: (input) =>
       ensureGitCommand("GitWorkflowService.switchRef", input.cwd).pipe(
-        Effect.andThen(Effect.scoped(git.switchRef(input))),
+        Effect.flatMap((handle) =>
+          withCheckoutLease(handle.repository.rootPath, Effect.scoped(git.switchRef(input))),
+        ),
       ),
     renameBranch: (input) =>
       ensureGit("GitWorkflowService.renameBranch", input.cwd).pipe(

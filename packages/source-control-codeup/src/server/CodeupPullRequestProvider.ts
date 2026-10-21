@@ -73,26 +73,27 @@ export const make = Effect.gen(function* () {
       ? Effect.succeed(parsed)
       : Effect.fail(failure("repository", "Expected a Codeup Central Edition repository."));
   };
-  const read = <S extends Schema.Codec<unknown, unknown, never, never>>(
+  const read = Effect.fn("CodeupPullRequestProvider.read")(function* <
+    S extends Schema.Codec<unknown, unknown, never, never>,
+  >(
     input: ProviderRepositoryRef,
     request: Omit<CodeupApi.CodeupRequest, "organizationId">,
     schema: S,
-  ) =>
-    Effect.gen(function* () {
-      const repo = yield* target(input);
-      const raw = yield* api
-        .request({
-          ...request,
-          organizationId: repo.organizationId,
-          params: { repositoryId: repo.repository, ...request.params },
-        })
-        .pipe(Effect.mapError(mapError(request.operation)));
-      return yield* Schema.decodeUnknownEffect(schema)(raw).pipe(
-        Effect.mapError((cause) =>
-          failure(request.operation, "Codeup returned an unreadable response.", cause),
-        ),
-      );
-    });
+  ) {
+    const repo = yield* target(input);
+    const raw = yield* api
+      .request({
+        ...request,
+        organizationId: repo.organizationId,
+        params: { repositoryId: repo.repository, ...request.params },
+      })
+      .pipe(Effect.mapError(mapError(request.operation)));
+    return yield* Schema.decodeUnknownEffect(schema)(raw).pipe(
+      Effect.mapError((cause) =>
+        failure(request.operation, "Codeup returned an unreadable response.", cause),
+      ),
+    );
+  });
   const mr = Effect.fn("CodeupPullRequestProvider.mr")(function* (input: Ref) {
     const value = yield* read(
       input,
