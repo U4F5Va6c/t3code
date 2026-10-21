@@ -148,43 +148,45 @@ export const make = ElectronUpdater.of({
       catch: (cause) => new ElectronUpdaterDownloadUpdateError({ channel, cause }),
     }).pipe(Effect.asVoid);
   }),
-  quitAndInstall: ({ isSilent, isForceRunAfter }) =>
-    Effect.gen(function* () {
-      const platform = yield* HostProcess.Platform;
-      const architecture = yield* HostProcess.Architecture;
-      const channel = autoUpdater.channel;
-      return yield* Effect.tryPromise({
-        try: async () => {
-          if (
-            platform === "darwin" &&
-            Electron.app.isPackaged &&
-            isCodeupPreviewVersion(Electron.app.getVersion())
-          ) {
-            const prepared = await prepareCodeupMacInstall({
-              executable: Electron.app.getPath("exe"),
-              currentVersion: Electron.app.getVersion(),
-              architecture,
-              download: downloadedUpdate,
-            });
-            await launchCodeupMacInstall(
-              prepared,
-              process.pid,
-              `${Electron.app.getPath("userData")}/codeup-update.log`,
-            );
-            Electron.app.quit();
-            return;
-          }
-          autoUpdater.quitAndInstall(isSilent, isForceRunAfter);
-        },
-        catch: (cause) =>
-          new ElectronUpdaterQuitAndInstallError({
-            channel,
-            isSilent,
-            isForceRunAfter,
-            cause,
-          }),
-      });
-    }),
+  quitAndInstall: Effect.fn("electron.updater.quitAndInstall")(function* ({
+    isSilent,
+    isForceRunAfter,
+  }) {
+    const platform = yield* HostProcess.Platform;
+    const architecture = yield* HostProcess.Architecture;
+    const channel = autoUpdater.channel;
+    return yield* Effect.tryPromise({
+      try: async () => {
+        if (
+          platform === "darwin" &&
+          Electron.app.isPackaged &&
+          isCodeupPreviewVersion(Electron.app.getVersion())
+        ) {
+          const prepared = await prepareCodeupMacInstall({
+            executable: Electron.app.getPath("exe"),
+            currentVersion: Electron.app.getVersion(),
+            architecture,
+            download: downloadedUpdate,
+          });
+          await launchCodeupMacInstall(
+            prepared,
+            process.pid,
+            `${Electron.app.getPath("userData")}/codeup-update.log`,
+          );
+          Electron.app.quit();
+          return;
+        }
+        autoUpdater.quitAndInstall(isSilent, isForceRunAfter);
+      },
+      catch: (cause) =>
+        new ElectronUpdaterQuitAndInstallError({
+          channel,
+          isSilent,
+          isForceRunAfter,
+          cause,
+        }),
+    });
+  }),
   on: (eventName, listener) => {
     const eventTarget = autoUpdater as unknown as {
       on: (eventName: string, listener: (...args: Array<unknown>) => void) => void;

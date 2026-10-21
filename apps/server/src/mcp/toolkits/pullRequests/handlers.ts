@@ -100,6 +100,15 @@ const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(function* (
   );
   const resolvedUrl =
     url ??
+    (/(?:^|\/)_git\/[^/]+$/u.test(repository)
+      ? changeRequestUrlFor(
+          "azure-devops",
+          host,
+          repository,
+          input.number,
+          project?.repositoryIdentity?.locator.remoteUrl,
+        )
+      : null) ??
     (projectHost.kind !== "codeup" && host !== "codeup.aliyun.com"
       ? `https://${host}/${repository}/pull/${input.number}`
       : null);
