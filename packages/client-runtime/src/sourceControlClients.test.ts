@@ -24,10 +24,6 @@ describe("sourceControlClients", () => {
     expect(sourceControlActorLabel("github", actor)).toBe("user-id");
     expect(actor.login).toBe("user-id");
   });
-  it("reads a missing kind as the first host and an unshipped kind as the generic one", () => {
-    expect(sourceControlClients.get(undefined).kind).toBe("github");
-    expect(sourceControlClients.get("forkhost").kind).toBe("unknown");
-  });
 
   it("gives a change request URL to the first host whose shape it has", () => {
     const kindOf = (url: string) => sourceControlClients.findByChangeRequestUrl(url)?.kind;

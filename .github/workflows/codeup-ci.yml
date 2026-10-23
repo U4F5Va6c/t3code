@@ -204,7 +204,7 @@ jobs:
       - name: Build Mac standalone backend
         if: needs.resolve.outputs.build == 'true'
         env:
-          VP_NODE_VERSION: "26.8.2"
+          VP_NODE_VERSION: "26.12.1"
         run: |
           node apps/server/scripts/cli.ts build-exe --verbose
           mkdir -p "$RUNNER_TEMP/cli-resource-monitor/darwin-arm64"
@@ -277,7 +277,7 @@ jobs:
           cp native/resource-monitor/target/release/t3-resource-monitor "$RUNNER_TEMP/cli-resource-monitor/linux-x64/"
       - name: Build and verify standalone backend
         env:
-          VP_NODE_VERSION: "26.8.2"
+          VP_NODE_VERSION: "26.12.1"
         run: |
           node apps/server/scripts/cli.ts build-exe --verbose
           node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$CODEUP_VERSION" --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
