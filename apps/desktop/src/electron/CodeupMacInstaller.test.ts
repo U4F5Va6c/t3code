@@ -188,52 +188,48 @@ describe("Codeup Mac installer", () => {
           }
         });
       }),
-    { timeout: 20_000 },
   );
 
-  it.effect(
-    "restores the previous app when replacing the staged app fails",
-    () =>
-      Effect.gen(function* () {
-        if ((yield* HostProcess.Platform) !== "darwin") return;
-        const architecture = yield* HostProcess.Architecture;
-        yield* Effect.promise(async () => {
-          const f = await fixture(architecture);
-          const prepared = await prepareCodeupMacInstall(f.input);
-          await NodeFSP.rm(prepared.staged, { recursive: true });
-          // Suppress only the failure alert in this test; the real rename/restore/open commands run.
-          const script = await NodeFSP.readFile(prepared.script, "utf8");
-          await NodeFSP.writeFile(
-            prepared.script,
-            script.replace("/usr/bin/osascript", "/usr/bin/true"),
-          );
-          const parent = NodeChildProcess.spawn("/bin/cat", [], {
-            stdio: ["pipe", "ignore", "ignore"],
-          });
-          expect(parent.pid).toBeDefined();
-          try {
-            const helper = await launchCodeupMacInstall(
-              prepared,
-              parent.pid!,
-              NodePath.join(f.root, "install.log"),
-            );
-            const exited = new Promise<number | null>((resolve, reject) => {
-              helper.once("error", reject);
-              helper.once("exit", resolve);
-            });
-            parent.stdin!.end();
-            const code = await exited;
-            expect(code).toBe(1);
-            expect(
-              await NodeFSP.readFile(NodePath.join(f.appPath, "Contents", "Info.plist"), "utf8"),
-            ).toContain(oldVersion);
-            await execute("/usr/bin/lockf", ["-k", "-t", "0", prepared.lock, "/usr/bin/true"]);
-            await expect(NodeFSP.access(prepared.work)).rejects.toMatchObject({ code: "ENOENT" });
-          } finally {
-            parent.stdin?.end();
-          }
+  it.effect("restores the previous app when replacing the staged app fails", () =>
+    Effect.gen(function* () {
+      if ((yield* HostProcess.Platform) !== "darwin") return;
+      const architecture = yield* HostProcess.Architecture;
+      yield* Effect.promise(async () => {
+        const f = await fixture(architecture);
+        const prepared = await prepareCodeupMacInstall(f.input);
+        await NodeFSP.rm(prepared.staged, { recursive: true });
+        // Suppress only the failure alert in this test; the real rename/restore/open commands run.
+        const script = await NodeFSP.readFile(prepared.script, "utf8");
+        await NodeFSP.writeFile(
+          prepared.script,
+          script.replace("/usr/bin/osascript", "/usr/bin/true"),
+        );
+        const parent = NodeChildProcess.spawn("/bin/cat", [], {
+          stdio: ["pipe", "ignore", "ignore"],
         });
-      }),
-    { timeout: 20_000 },
+        expect(parent.pid).toBeDefined();
+        try {
+          const helper = await launchCodeupMacInstall(
+            prepared,
+            parent.pid!,
+            NodePath.join(f.root, "install.log"),
+          );
+          const exited = new Promise<number | null>((resolve, reject) => {
+            helper.once("error", reject);
+            helper.once("exit", resolve);
+          });
+          parent.stdin!.end();
+          const code = await exited;
+          expect(code).toBe(1);
+          expect(
+            await NodeFSP.readFile(NodePath.join(f.appPath, "Contents", "Info.plist"), "utf8"),
+          ).toContain(oldVersion);
+          await execute("/usr/bin/lockf", ["-k", "-t", "0", prepared.lock, "/usr/bin/true"]);
+          await expect(NodeFSP.access(prepared.work)).rejects.toMatchObject({ code: "ENOENT" });
+        } finally {
+          parent.stdin?.end();
+        }
+      });
+    }),
   );
 });

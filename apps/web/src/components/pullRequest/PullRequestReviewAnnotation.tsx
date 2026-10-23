@@ -99,8 +99,8 @@ export function PendingReviewCommentCard({
         <MessageSquareIcon className="size-3.5" />
         <span>
           {comment.stale
-            ? "Outdated draft — edit or discard; review the current diff before creating a replacement"
-            : "Pending — sent when you submit the review"}
+            ? "Outdated draft. Edit or discard; review the current diff before creating a replacement"
+            : "Pending. Sent when you submit the review"}
         </span>
         <Button
           size="icon-xs"
