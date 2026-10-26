@@ -45,7 +45,7 @@ Fork 自有数据库迁移放在 `CodeupMigrations/`，使用独立的 `codeup_s
 
 Codeup 实现放在新 `packages/source-control-codeup`，复用现有 SourceControlDriver 和 PullRequestProvider 契约。GitHub Provider 内部实现保持不动。设置中使用独立的 Codeup 入口和凭据绑定，仓库 remote 识别后交给对应 driver。
 
-上游已把 provider kind 改为开放 slug，每个 host 包自带 `src/client/definition.ts`（展示、URL、能力、设置）和 `src/server/` driver。最近的完整参照是 `packages/source-control-gitcafe`（REST API + token 设置）；CLI 封装型参照是 `source-control-gitlab`。`source-control-azure-devops` 只覆盖 PR，不含工作项，不作为 ProjeX 参照。新 host 的注册点用以下命令列出，逐一照做：
+上游已把 provider kind 改为开放 slug，每个 host 包自带 `src/shared/definition.ts`（展示、URL、remote 识别、能力、设置）和 `src/server/` driver。共享定义在 `packages/source-control-definitions` 注册，服务端 driver 在 `sourceControlDefinitions.ts` 注册并自行提供内部服务。最近的完整参照是 `packages/source-control-gitcafe`（REST API + token 设置）；CLI 封装型参照是 `source-control-gitlab`。`source-control-azure-devops` 只覆盖 PR，不含工作项，不作为 ProjeX 参照。新 host 的注册点用以下命令列出，逐一照做：
 
 ```sh
 git grep -il gitcafe -- apps packages ':!packages/source-control-gitcafe' ':!*.test.*'

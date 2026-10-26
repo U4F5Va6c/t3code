@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { quoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import * as Schema from "effect/Schema";
-import { codeupRepositoryUrl } from "../client/repository.ts";
+import { codeupRepositoryUrl } from "../shared/repository.ts";
 
 const text = Schema.optional(Schema.NullOr(Schema.String));
 const bool = Schema.optional(Schema.NullOr(Schema.Boolean));

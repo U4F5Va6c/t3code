@@ -3,9 +3,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./client/definition": "./src/client/definition.ts",
     "./server/driver": "./src/server/driver.ts",
-    "./server/CodeupApi": "./src/server/CodeupApi.ts"
+    "./shared/definition": {
+      "types": "./src/shared/definition.ts",
+      "import": "./src/shared/definition.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -19,6 +21,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@t3tools/source-control-testing": "workspace:*",
     "@types/node": "catalog:",
