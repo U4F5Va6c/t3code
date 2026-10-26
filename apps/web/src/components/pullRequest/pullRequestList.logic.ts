@@ -48,7 +48,7 @@ export interface PullRequestGroup<Entry extends PullRequestListEntry = PullReque
 
 export interface PullRequestAuthorFacet {
   readonly actor: PullRequestActor;
-  readonly label: string;
+  readonly label?: string;
   readonly count: number;
   readonly mergedCount: number;
 }

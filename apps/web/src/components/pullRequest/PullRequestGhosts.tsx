@@ -1,13 +1,5 @@
 import { sourceControlRepositoryLabel } from "@t3tools/client-runtime/source-control-clients";
-/**
- * Loading states specific to the pull request surface — the first list, a search under way,
- * and a detail panel opening — use bars in the geometry of the content they stand for, pulsing
- * on one composited layer. Diff loading uses the shared diff-panel skeleton instead.
- *
- * The bars share the app-wide `Skeleton` tone (`muted-foreground` at low alpha, which reads on
- * both themes) and the single `animate-skeleton` pulse, applied once on the container so any
- * number of bars costs one opacity animation.
- */
+/** One container pulse keeps loading bars on a single composited layer. */
 import type { PullRequestListEntry, PullRequestSummary } from "@t3tools/contracts";
 import {
   ArrowLeftIcon,

@@ -1,11 +1,4 @@
-/**
- * A review being written, held until it is sent.
- *
- * Nothing here reaches the host: a review is one request carrying every line comment and the
- * verdict together, so a half-written one is invisible to everyone else — including on the
- * hosts that have no pending review of their own. That also means a draft lives only as long
- * as the tab does, which is why this is deliberately not persisted.
- */
+/** Local drafts stay private until submission and live only as long as the tab. */
 import type {
   PullRequestRef,
   PullRequestReviewCommentDraft,

@@ -6,7 +6,7 @@ import type {
   PullRequestReviewRevision,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect } from "react";
+import { useEffect, useEffectEvent } from "react";
 import { create } from "zustand";
 import { useEnvironmentPresentation } from "~/state/presentation";
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -99,12 +99,12 @@ export function usePullRequestReviewDrafts(
       usePlatformDrafts.getState().set(key, result.value);
     else toastManager.add({ type: "error", title: "Could not refresh private review drafts" });
   };
+  const refreshOnChange = useEffectEvent(refresh);
+  // Synchronize host drafts on identity, connection, or revision changes, independently of renders.
   useEffect(() => {
-    // The host refresh token deliberately invalidates a completed private read.
-    void refreshToken;
-    void refresh();
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Host refreshes invalidate this read without changing its RPC input.
-  }, [refresh, refreshToken]);
+    void refreshOnChange();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Identity, connectivity and host revision invalidate the external draft snapshot.
+  }, [key, persisted, viewer, connected, refreshToken]);
   const comments: ReadonlyArray<PendingReviewComment> = !persisted
     ? local
     : (snapshot?.drafts ?? []).map((d) => ({

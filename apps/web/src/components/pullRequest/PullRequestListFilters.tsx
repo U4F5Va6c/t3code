@@ -312,7 +312,7 @@ function PullRequestAuthorChoices({
           <MenuRadioItem key={option.actor.login.toLowerCase()} value={option.actor.login}>
             <span className="flex min-w-0 items-center gap-2">
               <PullRequestActorAvatar actor={option.actor} />
-              <span className="min-w-0 flex-1 truncate">{option.actor.login}</span>
+              <span className="min-w-0 flex-1 truncate">{option.label ?? option.actor.login}</span>
               {option.mergedCount > 0 ? (
                 <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                   {option.mergedCount} merges loaded
@@ -342,6 +342,7 @@ function PullRequestAuthorFilter({
   scope: ReadonlyArray<PullRequestFilterOptionScope>;
   onChange: (author: string | undefined) => void;
 }) {
+  const selected = selectedPullRequestAuthor(options, [], value);
   return (
     <MenuSub>
       <MenuSubTrigger>

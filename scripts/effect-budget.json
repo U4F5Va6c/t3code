@@ -353,6 +353,7 @@
   "apps/web/src/components/pullRequest/usePullRequestDetail.ts": 1,
   "apps/web/src/components/pullRequest/usePullRequestFilesViewed.ts": 2,
   "apps/web/src/components/pullRequest/usePullRequestListView.ts": 1,
+  "apps/web/src/components/pullRequest/usePullRequestReviewDrafts.ts": 1,
   "apps/web/src/components/pullRequest/useThreadLinkedPullRequest.ts": 1,
   "apps/web/src/components/search/ProjectContentSearchDialog.tsx": 1,
   "apps/web/src/components/settings/AcpRegistryIcon.tsx": 1,

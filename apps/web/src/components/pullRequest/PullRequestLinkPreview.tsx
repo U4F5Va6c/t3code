@@ -90,6 +90,7 @@ export function PullRequestLinkPreview({
         })
       : link;
   const preview = previewQuery.data;
+  const provider = sourceControlClients.findByChangeRequestUrl(preview?.url ?? "")?.kind;
   const showCard = preview !== null || (previewQuery.error !== null && fallback !== undefined);
   const showUrlTooltip = open && previewQuery.error !== null && !showCard;
   const state =
@@ -97,8 +98,8 @@ export function PullRequestLinkPreview({
       ? null
       : resolvePullRequestState({ state: preview.state, isDraft: preview.isDraft });
   const authorLabel =
-    preview?.author && sourceControlClients.get(preview.provider).actorLabel
-      ? sourceControlActorLabel(preview.provider, preview.author)
+    preview?.author && sourceControlClients.get(provider).actorLabel
+      ? sourceControlActorLabel(provider, preview.author)
       : preview?.author === null
         ? "ghost"
         : preview?.author.name && preview.author.name !== preview.author.login
@@ -129,7 +130,7 @@ export function PullRequestLinkPreview({
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
                   <span className="min-w-0 truncate">
-                    {sourceControlRepositoryLabel(preview.provider, preview.repository)}
+                    {sourceControlRepositoryLabel(provider, preview.repository)}
                   </span>
                   <span className="shrink-0">#{preview.number}</span>
                   <span aria-hidden>·</span>
