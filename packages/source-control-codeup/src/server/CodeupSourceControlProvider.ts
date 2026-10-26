@@ -6,8 +6,8 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
-import { definition } from "../client/definition.ts";
-import { parseCodeupRepository, parseCodeupChangeRequest } from "../client/repository.ts";
+import { definition } from "../shared/definition.ts";
+import { parseCodeupRepository, parseCodeupChangeRequest } from "../shared/repository.ts";
 import * as CodeupApi from "./CodeupApi.ts";
 import * as Json from "./codeupJson.ts";
 

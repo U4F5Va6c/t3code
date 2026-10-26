@@ -1,6 +1,6 @@
 import { PositiveInt, TrimmedNonEmptyString, TrimmedString } from "@t3tools/contracts";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
-import { readSourceControlHostSettings } from "@t3tools/source-control-core/client/definition";
+import { readSourceControlHostSettings } from "@t3tools/source-control-core/shared/definition";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as PlatformError from "effect/PlatformError";
@@ -14,8 +14,8 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 
-import * as CodeupClient from "../client/definition.ts";
-import { CODEUP_API_HOST, CODEUP_HOST, parseCodeupRepository } from "../client/repository.ts";
+import * as CodeupClient from "../shared/definition.ts";
+import { CODEUP_API_HOST, CODEUP_HOST, parseCodeupRepository } from "../shared/repository.ts";
 
 const Repository = Schema.Struct({
   id: PositiveInt,

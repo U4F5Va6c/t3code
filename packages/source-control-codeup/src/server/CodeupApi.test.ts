@@ -3,6 +3,8 @@ import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as FileSystem from "effect/FileSystem";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as PlatformError from "effect/PlatformError";
@@ -43,7 +45,7 @@ function harness(
     return Effect.succeed(HttpClientResponse.fromWeb(request, respond(request)));
   });
   const layer = CodeupApi.layer.pipe(
-    Layer.provide(Layer.succeed(HttpClient.HttpClient, http)),
+    Layer.provideMerge(Layer.succeed(HttpClient.HttpClient, http)),
     Layer.provideMerge(
       TestSourceControlHost.layer({
         process: {
@@ -70,6 +72,8 @@ function harness(
   return {
     layer: layer.pipe(
       Layer.provideMerge(FileSystem.layerNoop({})),
+      Layer.provideMerge(SourceControlRateLimit.layer),
+      Layer.provideMerge(NodeCrypto.layer),
       Layer.provide(Layer.succeed(HostProcess.Environment, {})),
     ),
     sent,
@@ -206,7 +210,7 @@ describe("Codeup API and driver", () => {
             },
           }),
         ).toBeNull();
-      }).pipe(Effect.provide(layer));
+      }).pipe(Effect.scoped, Effect.provide(layer));
     },
   );
 
@@ -219,7 +223,7 @@ describe("Codeup API and driver", () => {
       ),
     );
     const layer = CodeupApi.layer.pipe(
-      Layer.provide(Layer.succeed(HttpClient.HttpClient, http)),
+      Layer.provideMerge(Layer.succeed(HttpClient.HttpClient, http)),
       Layer.provide(
         TestSourceControlHost.layer({
           settings: {
@@ -273,7 +277,7 @@ describe("Codeup API and driver", () => {
             .pipe(Effect.flip)).detail,
         ).toContain("private repository");
         expect(sent).toHaveLength(2);
-      }).pipe(Effect.provide(layer));
+      }).pipe(Effect.scoped, Effect.provide(layer));
     },
   );
 
@@ -290,7 +294,7 @@ describe("Codeup API and driver", () => {
         value: expect.stringContaining("1 of 2 organizations connected"),
       });
       expect(auth.detail).toMatchObject({ value: expect.stringContaining("org-b:") });
-    }).pipe(Effect.provide(layer));
+    }).pipe(Effect.scoped, Effect.provide(layer));
   });
 });
 
@@ -309,7 +313,7 @@ describe("Codeup automatic authentication", () => {
       return Effect.succeed(HttpClientResponse.fromWeb(request, json(repository())));
     });
     const layer = CodeupApi.layer.pipe(
-      Layer.provide(Layer.succeed(HttpClient.HttpClient, http)),
+      Layer.provideMerge(Layer.succeed(HttpClient.HttpClient, http)),
       Layer.provide(
         TestSourceControlHost.layer({
           process: {

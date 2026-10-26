@@ -28,6 +28,7 @@ export function PullRequestGuideTab({
   canComment,
   persistedDrafts = false,
   viewer,
+  rangeComments,
   onAskAboutLines,
   onAskAboutStop,
   onFinishReview,
@@ -43,6 +44,7 @@ export function PullRequestGuideTab({
   persistedDrafts?: boolean;
   viewer?: string | undefined;
   /** Opens an agent thread about lines of the change. Null where no thread can be opened. */
+  rangeComments: boolean;
   onAskAboutLines: ((comment: ReviewCommentContext, request: string) => void) | null;
   onAskAboutStop:
     | ((stop: PullRequestReviewGuideStop, index: number, question: string) => void)
@@ -72,12 +74,14 @@ export function PullRequestGuideTab({
       ? null
       : {
           canComment: canComment && !persistedDrafts,
+          rangeComments,
           pending,
-          onComment: ({ path, oldPath, position, body }) =>
+          onComment: ({ path, oldPath, position, startPosition, body }) =>
             addComment(reviewKey, {
               id: nextPendingReviewCommentId(),
               path,
               ...(oldPath === null ? {} : { oldPath }),
+              ...(startPosition === undefined ? {} : { startPosition }),
               position,
               body,
             }),

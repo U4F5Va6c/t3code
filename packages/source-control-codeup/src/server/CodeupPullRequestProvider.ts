@@ -1,4 +1,3 @@
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   type PullRequestCapabilities,
   type PullRequestReviewRevision,
@@ -15,8 +14,12 @@ import * as SourceControlHost from "@t3tools/source-control-core/server/SourceCo
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import { definition } from "../client/definition.ts";
-import { CODEUP_HOST, parseCodeupRepository } from "../client/repository.ts";
+import { definition } from "../shared/definition.ts";
+import {
+  CODEUP_HOST,
+  parseCodeupRepository,
+  parseCodeupChangeRequest,
+} from "../shared/repository.ts";
 import * as CodeupApi from "./CodeupApi.ts";
 import * as Json from "./codeupJson.ts";
 
@@ -103,13 +106,12 @@ export const make = Effect.gen(function* () {
     const repository = value.detailUrl
       ? null
       : yield* api.getRepository(input.repository).pipe(Effect.mapError(mapError("repository")));
-    const url = value.detailUrl ? parseChangeRequestUrl(value.detailUrl) : null;
+    const url = value.detailUrl ? parseCodeupChangeRequest(value.detailUrl) : null;
     if (
       value.localId !== input.number ||
       (repository !== null && value.targetProjectId !== repository.id) ||
       (value.detailUrl &&
         (url === null ||
-          url.host !== input.host ||
           url.repository !== input.repository.toLowerCase() ||
           url.number !== input.number))
     )

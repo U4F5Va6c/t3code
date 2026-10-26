@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { EnvironmentProject } from "./models.ts";
@@ -84,7 +84,7 @@ const repositoryIdentity = {
     remoteName: "upstream",
     remoteUrl: "https://github.com/t3tools/t3code.git",
   },
-  provider: "github",
+  provider: SourceControlProviderKind.make("github"),
   owner: "t3tools",
   name: "t3code",
   displayName: "T3 Code",
@@ -96,7 +96,7 @@ it("shortens Codeup project labels without merging organizations or overwriting 
       title: `${org}/team/repo`,
       repositoryIdentity: {
         ...repositoryIdentity,
-        provider: "codeup",
+        provider: SourceControlProviderKind.make("codeup"),
         owner: `${org}/team`,
         name: "repo",
         displayName: `${org}/team/repo`,

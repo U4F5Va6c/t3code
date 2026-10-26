@@ -7,7 +7,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Api from "./CodeupApi.ts";
-import { definition } from "../client/definition.ts";
+import { definition } from "../shared/definition.ts";
 import * as Provider from "./CodeupSourceControlProvider.ts";
 
 const repository = {
