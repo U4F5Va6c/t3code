@@ -118,6 +118,7 @@ jobs:
           scripts/build-desktop-artifact.test.ts
           apps/desktop/src/updates/updateChannels.test.ts
           apps/desktop/src/app/DesktopEnvironment.test.ts
+          apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts
           apps/web/src/branding.test.ts
           apps/server/src/cloud/bootService.test.ts
           apps/server/src/cloud/selfUpdate.test.ts
