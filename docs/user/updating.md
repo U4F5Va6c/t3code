@@ -1,9 +1,8 @@
 # Updating T3 Code
 
 The app you use and the server running your agents can be on different machines.
-When a server is behind your web or desktop app, an update notice appears in the
-conversation and **Settings → Connections**. Update the machine named in that
-notice.
+When a server is behind your web or desktop app, the update button at the bottom
+of the sidebar and **Settings → Environments** offer to update it.
 
 ## Update everything at once
 
@@ -27,7 +26,7 @@ Official server updates appear only after that version is published to npm. Code
 servers use complete releases from the Fork instead. Remote desktop apps do not
 wait for npm. The confirmation lists each machine it skips and why, such as a
 machine that is offline or needs a manual update. Use the notice or
-**Settings → Connections** for those.
+**Settings → Environments** for those.
 
 If a desktop app restarts on its old version, T3 Code tells you the update did
 not apply. It does not install that version again on its own, even when another
@@ -46,7 +45,7 @@ open **Codeup Preview releases** in Settings and install the matching DMG.
 The installer keeps the previous app beside Preview as `.t3-codeup-previous.app`
 for recovery; it does not update the official app.
 
-In **Settings → Connections**, Codeup servers are offered the latest complete
+In **Settings → Environments**, Codeup servers are offered the latest complete
 Fork release, even before you update the client. Keep the client open through
 the server restart. Official and Codeup servers keep their own release sources;
 use Codeup Preview to manage Fork upgrades. An older official client may connect
@@ -54,7 +53,7 @@ but cannot discover the Fork update channel.
 
 The Fork command-line installation uses `~/.t3-codeup` by default. Run `t3 update`
 on the server's machine to update its Fork installation. A server started by
-hand needs a restart; a supported background service can update from Connections.
+hand needs a restart; a supported background service can update from Environments.
 Updating a desktop-hosted server instead updates the desktop app on that machine.
 Keep a backup before upgrading important work: restoring an older executable
 alone does not undo database migrations.
@@ -68,7 +67,7 @@ below.
 Server updates restart the connection and can interrupt active agents and
 terminal commands. Saved threads, settings, and project files remain.
 
-**Settings → General → Continue threads after restarts** is on by default.
+**Settings → Maintenance → Continue threads after restarts** is on by default.
 It resumes supported active threads after an update, crash, or machine
 restart. Changes are saved to connected environments that support this setting;
 update older servers first. If a supported environment was offline or has a
