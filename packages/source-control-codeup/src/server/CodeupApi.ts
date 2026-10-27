@@ -191,12 +191,12 @@ const make = Effect.gen(function* () {
           env: { ALIBABA_CLOUD_YUNXIAO_API_BASE_URL: CODEUP_API_HOST },
         });
       const result = yield* run("aliyun-devops", []).pipe(
-        Effect.catch((cause) =>
-          cause._tag === "VcsProcessSpawnError" &&
-          cause.cause instanceof PlatformError.PlatformError &&
-          cause.cause.reason._tag === "NotFound"
-            ? run("aliyun", ["devops"])
-            : Effect.fail(cause),
+        Effect.catchIf(
+          (cause) =>
+            cause._tag === "VcsProcessSpawnError" &&
+            cause.cause instanceof PlatformError.PlatformError &&
+            cause.cause.reason._tag === "NotFound",
+          () => run("aliyun", ["devops"]),
         ),
         Effect.mapError(
           (cause) =>
