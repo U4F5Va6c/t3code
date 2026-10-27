@@ -12,12 +12,15 @@ import {
   sessionGrantsScope,
 } from "./auth.ts";
 
+const decodeAuthEnvironmentScopes = Schema.decodeSync(AuthEnvironmentScopes);
+const decodeAuthGrantScopes = Schema.decodeUnknownSync(AuthGrantScopes);
+
 describe("authorization grants", () => {
   it.each(["review:write", "work-items:write"] as const)(
     "decodes retired %s credentials without offering them in new grants",
     (scope) => {
-      expect(Schema.decodeSync(AuthEnvironmentScopes)([scope])).toEqual([scope]);
-      expect(() => Schema.decodeUnknownSync(AuthGrantScopes)([scope])).toThrow();
+      expect(decodeAuthEnvironmentScopes([scope])).toEqual([scope]);
+      expect(() => decodeAuthGrantScopes([scope])).toThrow();
       expect(AuthStandardClientScopes).not.toContain(scope);
     },
   );

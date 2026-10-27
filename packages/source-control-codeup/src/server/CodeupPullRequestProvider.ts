@@ -575,31 +575,30 @@ export const make = Effect.gen(function* () {
         );
         const result = yield* both.pipe(
           Effect.catchTags({
-            GitCommandError: () =>
-              Effect.gen(function* () {
-                const repository = yield* api
-                  .getRepository(input.repository)
-                  .pipe(Effect.mapError(mapError("fileContents")));
-                const remotes = yield* host.git.remotes(input.cwd).pipe(Effect.flatten);
-                const remote = remotes.remotes.find(
-                  (remote) => parseCodeupRepository(remote.url)?.repository === input.repository,
-                );
-                // Read exact blob IDs from the patch; a moving target branch is not the diff's base.
-                yield* host.git.execute({
-                  operation: "CodeupPullRequestProvider.fetchContents",
-                  cwd: input.cwd,
-                  args: [
-                    "fetch",
-                    "--no-tags",
-                    "--no-write-fetch-head",
-                    "--",
-                    remote?.name ?? repository.sshUrlToRepo,
-                    source.commitId,
-                    base.commitId,
-                  ],
-                });
-                return yield* both;
-              }),
+            GitCommandError: Effect.fn("CodeupPullRequestProvider.fetchContents")(function* () {
+              const repository = yield* api
+                .getRepository(input.repository)
+                .pipe(Effect.mapError(mapError("fileContents")));
+              const remotes = yield* host.git.remotes(input.cwd).pipe(Effect.flatten);
+              const remote = remotes.remotes.find(
+                (remote) => parseCodeupRepository(remote.url)?.repository === input.repository,
+              );
+              // Read exact blob IDs from the patch; a moving target branch is not the diff's base.
+              yield* host.git.execute({
+                operation: "CodeupPullRequestProvider.fetchContents",
+                cwd: input.cwd,
+                args: [
+                  "fetch",
+                  "--no-tags",
+                  "--no-write-fetch-head",
+                  "--",
+                  remote?.name ?? repository.sshUrlToRepo,
+                  source.commitId,
+                  base.commitId,
+                ],
+              });
+              return yield* both;
+            }),
           }),
           Effect.mapError((cause) =>
             cause._tag === "PullRequestProviderError"
