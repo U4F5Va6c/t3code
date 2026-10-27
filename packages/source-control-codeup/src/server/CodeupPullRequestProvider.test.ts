@@ -50,6 +50,7 @@ const compare = {
 };
 function harness(
   options: {
+    detailUrl?: string;
     gate?: boolean;
     changedAfterWrite?: boolean;
     changedBeforeComment?: boolean;
@@ -174,7 +175,7 @@ function harness(
     else if (url.pathname.endsWith("/changeRequests/7"))
       data = {
         ...mr,
-        detailUrl: `https://${input.host}/${repository}/change/7`,
+        detailUrl: options.detailUrl ?? `https://${input.host}/${repository}/change/7`,
         title,
         description,
         status,
@@ -664,6 +665,34 @@ const privateDraft = {
   to_patchset_biz_id: "s2",
   related_patchset: { patchSetBizId: "s2" },
 };
+it.effect.each(["org/team/repo", "org/Team/Repo"])(
+  "reads private drafts from a mixed-case repository URL for %s",
+  (repository) => {
+    const { layer } = harness({
+      detailUrl: "https://codeup.aliyun.com/org/Team/Repo/change/7",
+      comments: [privateDraft],
+    });
+    return Effect.gen(function* () {
+      const provider = yield* Provider.make;
+      const list = yield* provider.listReviewDrafts({ ...input, repository });
+      expect(list.viewer).toBe("organization-viewer");
+      expect(list.drafts.map((draft) => draft.id)).toEqual(["private"]);
+    }).pipe(Effect.provide(layer));
+  },
+);
+it.effect.each([
+  "https://codeup.aliyun.com/org/Team/Other/change/7",
+  "https://codeup.aliyun.com/other/Team/Repo/change/7",
+  "https://codeup.aliyun.com/org/Team/Repo/change/8",
+])("rejects private drafts for a different merge request identity: %s", (detailUrl) => {
+  const { layer } = harness({ detailUrl, comments: [privateDraft] });
+  return Effect.gen(function* () {
+    const provider = yield* Provider.make;
+    const error = yield* provider.listReviewDrafts(input).pipe(Effect.flip);
+    expect(error.operation).toBe("identity");
+    expect(error.detail).toBe("Codeup returned another merge request or repository.");
+  }).pipe(Effect.provide(layer));
+});
 it.effect(
   "keeps private drafts out of public activity and preserves unknown and stale drafts",
   () => {

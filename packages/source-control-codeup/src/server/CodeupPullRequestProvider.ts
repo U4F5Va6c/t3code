@@ -112,7 +112,7 @@ export const make = Effect.gen(function* () {
       (repository !== null && value.targetProjectId !== repository.id) ||
       (value.detailUrl &&
         (url === null ||
-          url.repository !== input.repository.toLowerCase() ||
+          url.repository.toLowerCase() !== input.repository.toLowerCase() ||
           url.number !== input.number))
     )
       return yield* failure("identity", "Codeup returned another merge request or repository.");
