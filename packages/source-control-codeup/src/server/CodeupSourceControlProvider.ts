@@ -108,24 +108,28 @@ export const make = Effect.gen(function* () {
       headSelectors: headSelectors.filter((s) => !s.includes(":")),
       limit: state === "open" ? 1 : 20,
     }),
-    getRepositoryCloneUrls: (input) =>
-      api.getRepository(input.repository).pipe(
-        Effect.mapError(mapError(input.cwd, "getRepository")),
-        Effect.map((repo) => ({
-          nameWithOwner: repo.pathWithNamespace,
-          url: repo.httpUrlToRepo,
-          sshUrl: repo.sshUrlToRepo,
-        })),
-      ),
-    getDefaultBranch: (input) =>
-      target(input).pipe(
+    getRepositoryCloneUrls: Effect.fn("CodeupSourceControlProvider.getRepositoryCloneUrls")(
+      function (input) {
+        return api.getRepository(input.repository).pipe(
+          Effect.mapError(mapError(input.cwd, "getRepository")),
+          Effect.map((repo) => ({
+            nameWithOwner: repo.pathWithNamespace,
+            url: repo.httpUrlToRepo,
+            sshUrl: repo.sshUrlToRepo,
+          })),
+        );
+      },
+    ),
+    getDefaultBranch: Effect.fn("CodeupSourceControlProvider.getDefaultBranch")(function (input) {
+      return target(input).pipe(
         Effect.flatMap((repo) =>
           api
             .getRepository(repo.repository)
             .pipe(Effect.mapError(mapError(input.cwd, "getDefaultBranch"))),
         ),
         Effect.map((repo) => repo.defaultBranch || null),
-      ),
+      );
+    }),
     listChangeRequests: Effect.fn("CodeupSourceControlProvider.listChangeRequests")(
       function* (input) {
         const repo = yield* target(input);
@@ -283,7 +287,7 @@ export const make = Effect.gen(function* () {
             ).pipe(
               Effect.catch((cause) =>
                 existing.pipe(
-                  Effect.catch(() => Effect.succeed(false)),
+                  Effect.orElseSucceed(() => false),
                   Effect.flatMap((found) => (found ? Effect.succeed(null) : Effect.fail(cause))),
                 ),
               ),
@@ -316,8 +320,9 @@ export const make = Effect.gen(function* () {
         `repository:${repo.repository}`,
         Effect.gen(function* () {
           const existing = yield* lookup.pipe(
-            Effect.catch((cause) =>
-              cause.reason === "not-found" ? Effect.succeed(null) : Effect.fail(cause),
+            Effect.catchIf(
+              (cause) => cause.reason === "not-found",
+              () => Effect.succeed(null),
             ),
             Effect.mapError(mapError(input.cwd, "createRepository")),
           );

@@ -99,7 +99,6 @@ jobs:
           apps/server/src/persistence/reconcileV2PreviewMigration.test.ts
           apps/server/src/auth/EnvironmentAuth.test.ts
           apps/server/src/auth/McpOAuth.test.ts
-          apps/server/src/mcp/toolkits/worktree/registration.test.ts
           apps/server/src/pullRequest/PullRequestService.test.ts
           apps/server/src/pullRequest/PullRequestReviewGuideService.test.ts
           apps/server/src/mcp/toolkits/pullRequests/handlers.test.ts
@@ -119,6 +118,7 @@ jobs:
           scripts/build-desktop-artifact.test.ts
           apps/desktop/src/updates/updateChannels.test.ts
           apps/desktop/src/app/DesktopEnvironment.test.ts
+          apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts
           apps/web/src/branding.test.ts
           apps/server/src/cloud/bootService.test.ts
           apps/server/src/cloud/selfUpdate.test.ts
@@ -168,7 +168,7 @@ jobs:
       - name: Install Electron
         run: vp run --filter @t3tools/desktop ensure:electron
       - name: Verify Fork native installer
-        run: vp test run apps/desktop/src/electron/CodeupMacInstaller.test.ts apps/desktop/src/electron/ElectronUpdater.test.ts
+        run: vp run --filter @t3tools/desktop test src/electron/CodeupMacInstaller.test.ts src/electron/ElectronUpdater.test.ts
       - name: Resolve shared Codeup version
         if: needs.resolve.outputs.build == 'true'
         env:

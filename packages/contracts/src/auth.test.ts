@@ -12,12 +12,15 @@ import {
   sessionGrantsScope,
 } from "./auth.ts";
 
+const decodeAuthEnvironmentScopes = Schema.decodeSync(AuthEnvironmentScopes);
+const decodeAuthGrantScopes = Schema.decodeUnknownSync(AuthGrantScopes);
+
 describe("authorization grants", () => {
-  it.each(["review:write", "work-items:write"])(
+  it.each(["review:write", "work-items:write"] as const)(
     "decodes retired %s credentials without offering them in new grants",
     (scope) => {
-      expect(Schema.decodeUnknownSync(AuthEnvironmentScopes)([scope])).toEqual([scope]);
-      expect(() => Schema.decodeUnknownSync(AuthGrantScopes)([scope])).toThrow();
+      expect(decodeAuthEnvironmentScopes([scope])).toEqual([scope]);
+      expect(() => decodeAuthGrantScopes([scope])).toThrow();
       expect(AuthStandardClientScopes).not.toContain(scope);
     },
   );
@@ -55,7 +58,9 @@ describe("authorization grants", () => {
   });
 
   it("ignores unknown response permissions without falling back to broader scopes", () => {
-    const session = Schema.decodeUnknownSync(AuthSessionState)({
+    const decodeAuthSessionState = Schema.decodeUnknownSync(AuthSessionState);
+
+    const session = decodeAuthSessionState({
       authenticated: true,
       auth: {
         policy: "loopback-browser",
