@@ -264,7 +264,7 @@ it.effect(
           Layer.mergeAll(
             NodeFileSystem.layer,
             Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
-              resolve: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),
+              resolve: () => Effect.succeed({ kind: "git", repository: { rootPath: project.workspaceRoot } } as VcsDriverRegistry.VcsDriverHandle),
             }),
             Layer.mock(GitVcsDriver.GitVcsDriver)({}),
             Layer.mock(GitManager.GitManager)({ runStackedAction: () => Effect.succeed(result) }),

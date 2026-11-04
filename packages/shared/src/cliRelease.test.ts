@@ -1,15 +1,30 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  acceptsTrackSwitchRelease,
   cliArchiveTarCommand,
+  cliReleaseAssetUrl,
   cliReleaseChannelOf,
   cliReleaseDownloadBaseUrl,
   cliReleaseIndexPageUrl,
+  desktopUpdateChannelOf,
   newestCliReleaseVersion,
   parseChecksums,
 } from "./cliRelease.ts";
 
 describe("cliRelease", () => {
+  it("keeps the Codeup track and archive source when using upstream update helpers", () => {
+    const version = "0.1.7-codeup.20261104.42";
+    expect(desktopUpdateChannelOf(version)).toBe("codeup");
+    expect(acceptsTrackSwitchRelease("0.1.7", "codeup", "0.1.7")).toBe(false);
+    expect(cliReleaseAssetUrl(version, "SHA256SUMS")).toBe(
+      `https://github.com/U4F5Va6c/t3code/releases/download/v${version}/SHA256SUMS`,
+    );
+    expect(
+      cliReleaseAssetUrl(version, "SHA256SUMS", "https://mirror.example/releases?token=test"),
+    ).toBe(`https://mirror.example/releases/v${version}/SHA256SUMS?token=test`);
+  });
+
   it("parses sha256sum output including binary-mode markers", () => {
     const checksums = parseChecksums(
       [
