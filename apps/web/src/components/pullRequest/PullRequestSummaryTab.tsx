@@ -242,23 +242,21 @@ function CommentResolutionControl({
     if (!canResolve || sending.current) return;
     sending.current = true;
     setPending(true);
-    try {
-      const result = await setResolution({
-        environmentId,
-        input: { ...reference, threadId: resolution.threadId, resolved: !resolution.isResolved },
-      });
-      if (result._tag === "Failure") {
-        toastManager.add({
-          type: "error",
-          title: "Could not update the conversation. Refresh and try again.",
-        });
-        return;
-      }
-      onRefresh();
-    } finally {
+    const result = await setResolution({
+      environmentId,
+      input: { ...reference, threadId: resolution.threadId, resolved: !resolution.isResolved },
+    }).finally(() => {
       sending.current = false;
       setPending(false);
+    });
+    if (result._tag === "Failure") {
+      toastManager.add({
+        type: "error",
+        title: "Could not update the conversation. Refresh and try again.",
+      });
+      return;
     }
+    onRefresh();
   };
   const Icon = resolution.isResolved ? CircleCheckIcon : CircleIcon;
   return (
