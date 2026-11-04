@@ -53,7 +53,8 @@ jobs:
 
   check:
     name: Lint, typecheck, source control tests
-    runs-on: ubuntu-latest
+    # Playwright 1.60 does not support Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -246,7 +247,7 @@ jobs:
     name: Codeup Preview backend (Linux x64)
     needs: resolve
     if: needs.resolve.outputs.build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
