@@ -1,8 +1,8 @@
 import {
   makeProviderSettingsSchema,
   secretSetting,
+  SettingsSecretValue,
   SourceControlProviderKind,
-  TrimmedString,
 } from "@t3tools/contracts";
 import {
   defineSourceControl,
@@ -24,7 +24,7 @@ const KIND = SourceControlProviderKind.make("codeup");
 
 export const settings = makeProviderSettingsSchema({
   // This slot is only for Central Edition. A future deployment must not reuse these tokens.
-  organizationTokens: Schema.Record(Schema.String, TrimmedString).pipe(
+  organizationTokens: Schema.Record(Schema.String, SettingsSecretValue).pipe(
     secretSetting,
     Schema.withDecodingDefault(Effect.succeed({})),
     Schema.annotateKey({

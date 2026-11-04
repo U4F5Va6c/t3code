@@ -1,4 +1,4 @@
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -57,7 +57,7 @@ export class GitWorkflowService extends Context.Service<
       | ProjectStore.ProjectStoreV2
       | PullRequestService.PullRequestService
       | VcsStatusBroadcaster.VcsStatusBroadcaster
-      | Crypto.Crypto
+      | SecureRandom.SecureRandom
     >;
     readonly isRepository: (cwd: string) => Effect.Effect<boolean, GitManagerServiceError>;
     readonly hasCommit: (input: {
@@ -74,6 +74,7 @@ export class GitWorkflowService extends Context.Service<
     readonly localStatus: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
+    readonly currentBranch: (cwd: string) => Effect.Effect<string | null, GitManagerServiceError>;
     readonly remoteStatus: (
       input: VcsStatusInput,
       options?: GitManager.GitRemoteStatusOptions,
@@ -126,6 +127,7 @@ export class GitWorkflowService extends Context.Service<
     readonly fetchWorktreeBaseCommit: (input: {
       readonly cwd: string;
       readonly refName: string;
+      readonly remote?: GitVcsDriver.GitWorktreeBaseRemote;
     }) => Effect.Effect<
       { readonly commitSha: string; readonly remoteRefName: string } | null,
       GitCommandError
@@ -219,13 +221,6 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    if (handle.kind !== "git") {
-      return yield* new GitManagerError({
-        operation,
-        cwd,
-        detail: `The ${operation} workflow currently supports Git repositories only; detected ${handle.kind}. (${cwd})`,
-      });
-    }
     return handle;
   });
 
@@ -245,14 +240,6 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    if (handle.kind !== "git") {
-      return yield* new GitCommandError({
-        operation,
-        command: "vcs-route",
-        cwd,
-        detail: `The ${operation} command currently supports Git repositories only; detected ${handle.kind}.`,
-      });
-    }
     return handle;
   });
 
@@ -271,13 +258,6 @@ export const make = Effect.gen(function* () {
       );
       if (!handle) {
         return false;
-      }
-      if (handle.kind !== "git") {
-        return yield* new GitManagerError({
-          operation,
-          cwd,
-          detail: `The ${operation} workflow currently supports Git repositories only; detected ${handle.kind}. (${cwd})`,
-        });
       }
       return true;
     },
@@ -301,14 +281,6 @@ export const make = Effect.gen(function* () {
     if (!handle) {
       return false;
     }
-    if (handle.kind !== "git") {
-      return yield* new GitCommandError({
-        operation,
-        command: "vcs-route",
-        cwd,
-        detail: `The ${operation} command currently supports Git repositories only; detected ${handle.kind}.`,
-      });
-    }
     return true;
   });
 
@@ -326,12 +298,7 @@ export const make = Effect.gen(function* () {
   ) {
     return ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
       Effect.flatMap((handle) =>
-        input.featureBranch
-          ? withCheckoutLease(
-              handle.repository.rootPath,
-              gitManager.runStackedAction(input, options),
-            )
-          : gitManager.runStackedAction(input, options),
+        withCheckoutLease(handle.repository.rootPath, gitManager.runStackedAction(input, options)),
       ),
     );
   });
@@ -341,11 +308,11 @@ export const make = Effect.gen(function* () {
       function* (input, options) {
         const result = yield* runStackedAction(input, options);
         if (input.threadId !== undefined) {
-          const crypto = yield* Crypto.Crypto;
+          const random = yield* SecureRandom.SecureRandom;
           yield* linkCreatedPullRequest({
             threadId: input.threadId,
             result,
-            commandId: crypto.randomUUIDv4().pipe(
+            commandId: random.uuidV4().pipe(
               Effect.orDie,
               Effect.map((id) => CommandId.make(`server:pr-created-link:${id}`)),
             ),
@@ -421,6 +388,32 @@ export const make = Effect.gen(function* () {
             : Effect.succeed(nonRepositoryLocalStatus()),
         ),
       );
+    }),
+    currentBranch: Effect.fn("GitWorkflowService.currentBranch")(function* (cwd) {
+      if (!(yield* detectGitRepositoryForStatus("GitWorkflowService.currentBranch", cwd))) {
+        return null;
+      }
+      const result = yield* git.execute({
+        operation: "GitWorkflowService.currentBranch",
+        cwd,
+        args: ["symbolic-ref", "--quiet", "HEAD"],
+        allowNonZeroExit: true,
+        timeoutMs: 5_000,
+      });
+      if (result.exitCode === 0) {
+        return result.stdout.trim().replace(/^refs\/heads\//, "") || null;
+      }
+      if (result.exitCode === 1) return null;
+      return yield* new GitCommandError({
+        operation: "GitWorkflowService.currentBranch",
+        command: "git symbolic-ref",
+        cwd,
+        argumentCount: 3,
+        ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
+        stdoutLength: result.stdout.length,
+        stderrLength: result.stderr.length,
+        detail: "Failed to read the checked-out branch.",
+      });
     }),
     remoteStatus: Effect.fn("GitWorkflowService.remoteStatus")(function (input, options) {
       return detectGitRepositoryForStatus("GitWorkflowService.remoteStatus", input.cwd).pipe(

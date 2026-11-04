@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
+import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -82,6 +83,58 @@ function harness(
 }
 
 describe("Codeup API and driver", () => {
+  it.effect("resolves organization token references through the host before calling Codeup", () => {
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      sourceControlHosts: {
+        codeup: {
+          organizationTokens: {
+            "org-a": { provider: "personal", reference: "op://Private/Codeup/token" },
+          },
+        },
+      },
+    };
+    const http = HttpClient.make((request) => {
+      expect(request.headers["x-yunxiao-token"]).toBe("resolved-token");
+      return Effect.succeed(HttpClientResponse.fromWeb(request, json(repository())));
+    });
+    return Effect.gen(function* () {
+      const api = yield* CodeupApi.CodeupApi;
+      expect((yield* api.getRepository("org-a/team/repo")).id).toBe(123);
+    }).pipe(
+      Effect.provide(
+        CodeupApi.layer.pipe(
+          Layer.provide(
+            Layer.effect(
+              SourceControlHost.SourceControlHost,
+              Effect.gen(function* () {
+                const host = yield* SourceControlHost.SourceControlHost;
+                return {
+                  ...host,
+                  settings: {
+                    ...host.settings,
+                    getWithSecrets: (kind: string) => {
+                      expect(kind).toBe("codeup");
+                      return Effect.succeed({
+                        ...settings,
+                        sourceControlHosts: {
+                          codeup: { organizationTokens: { "org-a": "resolved-token" } },
+                        },
+                      });
+                    },
+                  },
+                };
+              }),
+            ).pipe(Layer.provide(TestSourceControlHost.layer({ settings }))),
+          ),
+          Layer.provide(Layer.succeed(HttpClient.HttpClient, http)),
+          Layer.provide(Layer.succeed(HostProcess.Environment, {})),
+          Layer.provide(Layer.succeed(HostProcess.WorkingDirectory, "/server")),
+        ),
+      ),
+    );
+  });
+
   it.effect("routes only to the fixed API host with the matching organization's token", () => {
     const { layer, sent } = harness((request) =>
       json(repository(request.url.includes("/org-b/") ? "org-b/team/repo" : undefined)),

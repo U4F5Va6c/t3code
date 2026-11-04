@@ -100,7 +100,7 @@ export function usePullRequestReviewDrafts(
     else toastManager.add({ type: "error", title: "Could not refresh private review drafts" });
   };
   const refreshOnChange = useEffectEvent(refresh);
-  // Synchronize host drafts on identity, connection, or revision changes, independently of renders.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Refresh the private host draft snapshot when the mounted review changes account, connection, or revision.
   useEffect(() => {
     void refreshOnChange();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Identity, connectivity and host revision invalidate the external draft snapshot.

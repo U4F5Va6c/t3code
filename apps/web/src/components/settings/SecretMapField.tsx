@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { isSecretReference, type SettingsSecretValue } from "@t3tools/contracts";
 import { PlusIcon, XIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
@@ -20,7 +21,7 @@ export function SecretMapField({
   readonly description?: string | undefined;
   readonly keyPlaceholder?: string | undefined;
   readonly value: unknown;
-  readonly onChange: (value: Record<string, string>) => void;
+  readonly onChange: (value: Record<string, SettingsSecretValue>) => void;
 }) {
   const [key, setKey] = useState("");
   const [secret, setSecret] = useState("");
@@ -28,8 +29,9 @@ export function SecretMapField({
     value !== null && typeof value === "object" && !Array.isArray(value)
       ? Object.fromEntries(
           Object.entries(value).filter(
-            (entry): entry is [string, string] =>
-              typeof entry[1] === "string" && entry[1].trim().length > 0,
+            (entry): entry is [string, SettingsSecretValue] =>
+              (typeof entry[1] === "string" && entry[1].trim().length > 0) ||
+              isSecretReference(entry[1]),
           ),
         )
       : {};
@@ -46,7 +48,7 @@ export function SecretMapField({
             <span className="min-w-0 flex-1 break-all text-xs">{entryKey}</span>
             <div className="min-w-0 flex-1">
               <DraftInput
-                key={String(entries[entryKey])}
+                key={JSON.stringify(entries[entryKey])}
                 size="sm"
                 type="password"
                 autoComplete="off"

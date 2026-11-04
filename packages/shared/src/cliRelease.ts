@@ -1,11 +1,9 @@
-/**
- * Naming shared by the release workflow, the runtime installers, and
- * install scripts for the per-platform CLI archives attached to GitHub
- * Releases. Every consumer derives the same file names from a version and a
- * platform key, so a rename here is a release-breaking change.
- */
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { CODEUP_PREVIEW, isCodeupPreviewVersion } from "./codeupPreview.ts";
+
+import { compareSemverVersions } from "./semver.ts";
 
 const CLI_RELEASE_REPOSITORY = "pingdotgg/t3code";
 export const CLI_RELEASES_PAGE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
@@ -53,6 +51,25 @@ export function cliReleaseDownloadBaseUrl(version: string, baseUrl?: string): st
   return `${(baseUrl?.trim() || `https://github.com/${repository}/releases/download`).replace(/\/+$/, "")}/v${version}`;
 }
 
+/** `segments` added to `baseUrl`'s path, keeping its query, such as a signed mirror URL's token. */
+export function releaseAssetUrl(baseUrl: string, ...segments: ReadonlyArray<string>): string {
+  const url = new URL(baseUrl);
+  url.pathname = [url.pathname.replace(/\/+$/, ""), ...segments.map(encodeURIComponent)].join("/");
+  return url.toString();
+}
+
+/** A file of release `version`, from `baseUrl` laid out as GitHub's release downloads. */
+export function cliReleaseAssetUrl(version: string, fileName: string, baseUrl?: string): string {
+  const repository = isCodeupPreviewVersion(version)
+    ? CODEUP_PREVIEW.repository
+    : CLI_RELEASE_REPOSITORY;
+  return releaseAssetUrl(
+    baseUrl?.trim() || `https://github.com/${repository}/releases/download`,
+    `v${version}`,
+    fileName,
+  );
+}
+
 export function parseChecksums(text: string): ReadonlyMap<string, string> {
   const checksums = new Map<string, string>();
   for (const line of text.split(/\r?\n/)) {
@@ -78,6 +95,49 @@ export function cliReleaseChannelOf(version: string): CliReleaseChannel {
   return channel === "nightly" || channel === "preview" ? channel : "stable";
 }
 
+/** Whether updating between these versions crosses Stable and Nightly. Preview builds cross nothing.
+ * Hosts refuse a crossing outside a track switch, which checks the database first. */
+export function crossesReleaseTrack(fromVersion: string, toVersion: string): boolean {
+  const from = cliReleaseChannelOf(fromVersion);
+  const to = cliReleaseChannelOf(toVersion);
+  return from !== to && from !== "preview" && to !== "preview";
+}
+
+/** The desktop update track a build belongs to. Preview builds have no feed and read as Stable. */
+export function desktopUpdateChannelOf(version: string): "latest" | "nightly" | "codeup" {
+  if (isCodeupPreviewVersion(version)) return "codeup";
+  return cliReleaseChannelOf(version) === "nightly" ? "nightly" : "latest";
+}
+
+/**
+ * The update feed file a desktop app on this platform reads, which an update mirror publishes at
+ * its root beside the release's CLI archives.
+ */
+export function updateFeedFileName(
+  channel: "latest" | "nightly" | "codeup",
+  platform: NodeJS.Platform,
+  arch: string,
+): string {
+  if (platform === "darwin") return `${channel}-mac.yml`;
+  if (platform === "linux")
+    return arch === "arm64" ? `${channel}-linux-arm64.yml` : `${channel}-linux.yml`;
+  return `${channel}.yml`;
+}
+
+/** Whether a track switch may install `found` after its database check cleared `checked`: any build
+ * on the switch's track at least as new, since later releases only add migrations. */
+export function acceptsTrackSwitchRelease(
+  found: string,
+  channel: "latest" | "nightly" | "codeup",
+  checked: string,
+): boolean {
+  return (
+    channel !== "codeup" &&
+    cliReleaseChannelOf(found) === (channel === "nightly" ? "nightly" : "stable") &&
+    compareSemverVersions(found, checked) >= 0
+  );
+}
+
 /** Page until the channel matches; nightlies can push preview/stable releases past the first page. */
 export function cliReleaseIndexPageUrl(page: number, channel?: CliReleaseChannel): string {
   const repository = channel === "codeup" ? CODEUP_PREVIEW.repository : CLI_RELEASE_REPOSITORY;
@@ -87,7 +147,7 @@ export function cliReleaseIndexPageUrl(page: number, channel?: CliReleaseChannel
 /** Published last with the complete desktop/server asset set; old acceptance releases lack it. */
 const CODEUP_RELEASE_MANIFEST = "codeup-release.json";
 
-export function hasCodeupReleaseAssets(release: {
+function hasCodeupReleaseAssets(release: {
   readonly assets?: ReadonlyArray<{ readonly name: string }> | undefined;
 }): boolean {
   const names = new Set(release.assets?.map((asset) => asset.name));
@@ -115,4 +175,15 @@ export function newestCliReleaseVersion(
     if (cliReleaseChannelOf(version) === channel) return version;
   }
   return undefined;
+}
+
+const NpmReleaseMigrationManifest = Schema.Struct({
+  t3code: Schema.Struct({ databaseMigration: Schema.Int }),
+});
+const decodeNpmReleaseMigrationManifest = Schema.decodeUnknownOption(NpmReleaseMigrationManifest);
+
+/** Highest database migration a release's server knows, from its npm `t3` manifest. */
+export function npmReleaseDatabaseMigration(manifest: unknown): number | undefined {
+  return Option.getOrUndefined(decodeNpmReleaseMigrationManifest(manifest))?.t3code
+    .databaseMigration;
 }
