@@ -1,4 +1,9 @@
-import { PositiveInt, TrimmedNonEmptyString, TrimmedString } from "@t3tools/contracts";
+import {
+  PositiveInt,
+  settingsSecretLiteral,
+  TrimmedNonEmptyString,
+  TrimmedString,
+} from "@t3tools/contracts";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import { readSourceControlHostSettings } from "@t3tools/source-control-core/shared/definition";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
@@ -113,7 +118,7 @@ const make = Effect.gen(function* () {
   const host = yield* SourceControlHost.SourceControlHost;
   const environment = yield* HostProcess.Environment;
   const workingDirectory = yield* HostProcess.WorkingDirectory;
-  const tokens = host.settings.get.pipe(
+  const tokens = host.settings.getWithSecrets(CodeupClient.definition.kind).pipe(
     Effect.map(
       (settings) =>
         readSourceControlHostSettings(CodeupClient.settings, settings.sourceControlHosts.codeup)
@@ -134,7 +139,7 @@ const make = Effect.gen(function* () {
       environment.ALIBABA_CLOUD_YUNXIAO_ORGANIZATION_ID;
     const savedToken =
       organizationId && Object.hasOwn(saved, organizationId)
-        ? saved[organizationId]?.trim()
+        ? settingsSecretLiteral(saved[organizationId]).trim()
         : undefined;
     const apiHost = environment.ALIBABA_CLOUD_YUNXIAO_API_BASE_URL?.trim();
     const envToken =
@@ -323,8 +328,8 @@ const make = Effect.gen(function* () {
     probe: tokens.pipe(
       Effect.flatMap((saved) =>
         Effect.forEach(
-          Object.keys(saved).filter((key) => saved[key]?.trim()).length
-            ? Object.keys(saved).filter((key) => saved[key]?.trim())
+          Object.keys(saved).filter((key) => settingsSecretLiteral(saved[key]).trim()).length
+            ? Object.keys(saved).filter((key) => settingsSecretLiteral(saved[key]).trim())
             : [environment.ALIBABA_CLOUD_YUNXIAO_ORGANIZATION_ID ?? ""],
           (organizationId) =>
             (organizationId

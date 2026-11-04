@@ -1685,7 +1685,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       const raw = yield* fs.readFileString(config.settingsPath);
       assert.notInclude(raw, "codeup-token-a");
       assert.notInclude(raw, "codeup-token-b");
-      const redacted = ServerSettingsModule.redactServerSettingsForClient(saved).sourceControlHosts;
+      const redacted = ServerSettingsModule.redactServerSettingsForClient(saved, {
+        secretReferences: true,
+      }).sourceControlHosts;
       assert.notInclude(JSON.stringify(redacted), "codeup-token-a");
       assert.notInclude(JSON.stringify(redacted), "codeup-token-b");
       yield* settings.updateSettings({ sourceControlHosts: redacted });
@@ -1721,6 +1723,25 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       });
       assert.deepEqual(yield* stored("org-a"), Option.some("reconnected"));
       assert.isTrue(Option.isNone(yield* stored("org-b")));
+      const reference = {
+        provider: SecretProviderId.make("personal"),
+        reference: "op://Private/Codeup/token",
+      };
+      const referenced = yield* settings.updateSettings({
+        sourceControlHosts: { codeup: { organizationTokens: { "org-a": reference } } },
+      });
+      assert.isTrue(Option.isNone(yield* stored("org-a")));
+      for (const secretReferences of [true, false]) {
+        const forClient = ServerSettingsModule.redactServerSettingsForClient(referenced, {
+          secretReferences,
+        });
+        const echoed = yield* settings.updateSettings({
+          sourceControlHosts: forClient.sourceControlHosts,
+        });
+        assert.deepEqual(echoed.sourceControlHosts.codeup?.organizationTokens, {
+          "org-a": reference,
+        });
+      }
     }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
 
