@@ -12,11 +12,16 @@ import type {
 } from "@t3tools/contracts";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import {
+  pendingPullRequestCheckLabel,
+  summarizePendingPullRequestChecks,
+} from "@t3tools/client-runtime/pull-request-checks";
+import {
   CircleCheckIcon,
   CircleDashedIcon,
   CircleDotIcon,
   CircleSlashIcon,
   CircleXIcon,
+  ClockIcon,
   UserCheckIcon,
   UserRoundIcon,
   UserRoundXIcon,
@@ -220,21 +225,27 @@ function isWorkflowApprovalCheck(check: Pick<PullRequestCheck, "status" | "url">
 }
 
 export function pullRequestCheckStatusLabel(
-  check: Pick<PullRequestCheck, "status" | "url">,
+  check: Pick<PullRequestCheck, "status" | "url" | "pendingReason">,
 ): string {
+  if (check.status === "pending") return pendingPullRequestCheckLabel(check);
   return isWorkflowApprovalCheck(check)
     ? "Awaiting approval"
     : CHECK_STATUS_PRESENTATION[check.status].label;
 }
 
-export function PullRequestCheckStatusIcon({ status }: { status: PullRequestCheckStatus }) {
-  const presentation = CHECK_STATUS_PRESENTATION[status];
-  return (
-    <presentation.Icon
-      aria-hidden
-      className={cn("size-3.5 shrink-0", presentation.toneClassName)}
-    />
-  );
+export function PullRequestCheckStatusIcon({
+  check,
+}: {
+  check: Pick<PullRequestCheck, "status" | "pendingReason">;
+}) {
+  const presentation = CHECK_STATUS_PRESENTATION[check.status];
+  const Icon =
+    check.status === "pending" && check.pendingReason !== undefined
+      ? check.pendingReason === "queued"
+        ? ClockIcon
+        : CircleDashedIcon
+      : presentation.Icon;
+  return <Icon aria-hidden className={cn("size-3.5 shrink-0", presentation.toneClassName)} />;
 }
 
 const CHECKS_STATE_PRESENTATION = {
@@ -545,7 +556,7 @@ export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestChec
   const failed = checks.filter(
     (check) => check.status === "failure" || check.status === "cancelled",
   ).length;
-  const pending = checks.filter((check) => check.status === "pending").length;
+  const pending = summarizePendingPullRequestChecks(checks);
   const passed = checks.filter((check) => check.status === "success").length;
   if (failed > 0) return `${failed} of ${checks.length} failing`;
   if (workflowApprovalRequired > 0 && otherActionRequired > 0) {
@@ -557,6 +568,6 @@ export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestChec
   if (otherActionRequired > 0) {
     return `${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action`;
   }
-  if (pending > 0) return `${pending} of ${checks.length} running`;
+  if (pending) return pending;
   return passed === checks.length ? "All checks passed" : `${passed} of ${checks.length} passing`;
 }

@@ -929,7 +929,7 @@ export function PullRequestSummaryTab({
                         check.url ? "cursor-pointer" : "cursor-default",
                       )}
                     >
-                      <PullRequestCheckStatusIcon status={check.status} />
+                      <PullRequestCheckStatusIcon check={check} />
                       <span className="min-w-0 flex-1 wrap-anywhere">{check.name}</span>
                       <span className="shrink-0 text-muted-foreground">
                         {pullRequestCheckStatusLabel(check)}

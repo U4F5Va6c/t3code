@@ -6,6 +6,7 @@ import type {
   PullRequestListEntry,
   PullRequestMergeability,
 } from "@t3tools/contracts";
+import { pendingPullRequestCheckLabel } from "@t3tools/client-runtime/pull-request-checks";
 import type { AppSymbolName } from "../../components/ui/AppSymbol";
 import { PullRequestGlyph } from "./pullRequestGlyphs";
 
@@ -78,7 +79,11 @@ export function checkStatus(check: PullRequestCheck) {
         tint: "accent-warning-foreground",
       } as const;
     case "pending":
-      return { label: "Pending", icon: "clock", tint: "accent-warning-foreground" } as const;
+      return {
+        label: check.pendingReason === undefined ? "Pending" : pendingPullRequestCheckLabel(check),
+        icon: "clock",
+        tint: "accent-warning-foreground",
+      } as const;
     case "cancelled":
       return { label: "Cancelled", icon: "minus", tint: "accent-icon-muted" } as const;
     case "skipped":
@@ -113,7 +118,7 @@ export function pullRequestChecksSummary(pr: Pick<PullRequestDetail, "checks">) 
   if (pending)
     return {
       label: `${pending} pending`,
-      title: "Checks running",
+      title: "Checks pending",
       count: `${pending} pending`,
       icon: "clock",
       tint: "accent-warning-foreground",

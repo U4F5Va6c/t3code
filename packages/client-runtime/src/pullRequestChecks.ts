@@ -1,5 +1,28 @@
 import type { PullRequestCheck, PullRequestChecks, PullRequestDetail } from "@t3tools/contracts";
 
+export function pendingPullRequestCheckLabel(check: Pick<PullRequestCheck, "pendingReason">) {
+  switch (check.pendingReason) {
+    case "not-run":
+      return "Not run";
+    case "queued":
+      return "Queued";
+    case "unknown":
+      return "Pending";
+    default:
+      return "Running";
+  }
+}
+
+export function summarizePendingPullRequestChecks(checks: ReadonlyArray<PullRequestCheck>) {
+  const counts = new Map<string, number>();
+  for (const check of checks) {
+    if (check.status !== "pending") continue;
+    const label = pendingPullRequestCheckLabel(check).toLowerCase();
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts].map(([label, count]) => `${count} of ${checks.length} ${label}`).join(" · ");
+}
+
 export function resolvePullRequestDetailChecks(
   detail: PullRequestDetail | null,
   checks: PullRequestChecks | null,

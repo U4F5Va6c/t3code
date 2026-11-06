@@ -106,6 +106,8 @@ export type PullRequestCheckStatus = typeof PullRequestCheckStatus.Type;
 export const PullRequestCheck = Schema.Struct({
   name: TrimmedNonEmptyString,
   status: PullRequestCheckStatus,
+  /** Absent preserves the existing presentation of pending checks from older servers. */
+  pendingReason: Schema.optional(Schema.Literals(["not-run", "queued", "unknown"])),
   description: Schema.NullOr(Schema.String),
   url: Schema.NullOr(Schema.String),
   required: Schema.optional(Schema.Boolean),

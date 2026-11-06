@@ -4,6 +4,7 @@ import {
   type ChangeRequestTerminology,
 } from "@t3tools/client-runtime/source-control-clients";
 import * as Schema from "effect/Schema";
+import { summarizePendingPullRequestChecks } from "@t3tools/client-runtime/pull-request-checks";
 import {
   GitCommandError,
   PullRequestDetail,
@@ -324,11 +325,11 @@ export function describePullRequestChecks(checks: ReadonlyArray<PullRequestCheck
   const failed = checks.filter(
     (check) => check.status === "failure" || check.status === "cancelled",
   ).length;
-  const pending = checks.filter((check) => check.status === "pending").length;
+  const pending = summarizePendingPullRequestChecks(checks);
   const actionRequired = checks.filter((check) => check.status === "action-required").length;
   const passed = checks.filter((check) => check.status === "success").length;
   const parts: string[] = [];
-  if (pending > 0) parts.push(`${pending} of ${checks.length} running`);
+  if (pending) parts.push(pending);
   if (actionRequired > 0) parts.push(`${actionRequired} of ${checks.length} awaiting action`);
   if (failed > 0) {
     parts.push(parts.length > 0 ? `${failed} failed` : `${failed} of ${checks.length} failing`);

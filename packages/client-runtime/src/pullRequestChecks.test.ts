@@ -1,10 +1,35 @@
 import type { PullRequestCheck, PullRequestDetail } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolvePullRequestDetailChecks } from "./pullRequestChecks.ts";
+import {
+  resolvePullRequestDetailChecks,
+  summarizePendingPullRequestChecks,
+} from "./pullRequestChecks.ts";
 
 const detail = (overrides: Partial<PullRequestDetail> = {}): PullRequestDetail =>
   ({ title: "Cache the title", state: "open", checks: [], ...overrides }) as PullRequestDetail;
+
+it("counts pending execution states separately without counting completed checks as running", () => {
+  const pending = (pendingReason?: PullRequestCheck["pendingReason"]): PullRequestCheck => ({
+    name: "build",
+    status: "pending",
+    ...(pendingReason === undefined ? {} : { pendingReason }),
+    url: null,
+    description: null,
+  });
+  expect(
+    summarizePendingPullRequestChecks([
+      pending("not-run"),
+      pending("queued"),
+      pending("queued"),
+      pending(),
+      pending("unknown"),
+      { ...pending(), status: "success" },
+    ]),
+  ).toBe("1 of 6 not run · 2 of 6 queued · 1 of 6 running · 1 of 6 pending");
+  expect(summarizePendingPullRequestChecks([pending()])).toBe("1 of 1 running");
+  expect(summarizePendingPullRequestChecks([])).toBe("");
+});
 
 describe("resolvePullRequestDetailChecks", () => {
   it("uses fresh checks for detail counts without replacing other PR fields", () => {
