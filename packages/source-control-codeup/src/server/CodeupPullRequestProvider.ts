@@ -34,6 +34,8 @@ const capabilities: PullRequestCapabilities = {
   actions: ["close", "reopen", "merge"],
   mergeMethods: ["merge", "squash", "rebase"],
   viewedFiles: "environment",
+  mentions: false,
+  referenceSigils: [],
   // Mobile retains the legacy inline path; persisted drafts use the versioned Web/MCP path.
   review: {
     inlineComment: false,
@@ -42,7 +44,7 @@ const capabilities: PullRequestCapabilities = {
     resolve: true,
     verdicts: ["approve", "request-changes", "comment"],
   },
-  reviewers: { request: true, listCandidates: true },
+  reviewers: { request: true, listCandidates: true, searchCandidates: false },
   edit: { changeRequest: true, comment: true },
 };
 

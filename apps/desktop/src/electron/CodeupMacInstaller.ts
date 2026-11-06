@@ -18,7 +18,12 @@ const Download = Schema.Struct({
 
 const decodeDownload = Schema.decodeUnknownSync(Download);
 
-export class CodeupMacInstallError extends Error {}
+export class CodeupMacInstallError extends Schema.TaggedError<CodeupMacInstallError>()(
+  "CodeupMacInstallError",
+  { message: Schema.String, cause: Schema.optional(Schema.Defect()) },
+) {}
+
+export const isCodeupMacInstallError = Schema.is(CodeupMacInstallError);
 
 // Arguments, never interpolated shell source: paths can contain spaces or shell metacharacters.
 const CODEUP_MAC_INSTALL_SCRIPT = `#!/bin/sh
@@ -83,7 +88,7 @@ async function requirePreviewBundle(appPath: string): Promise<void> {
     (await NodeFSP.lstat(appPath)).isSymbolicLink() ||
     (await bundleValue(appPath, "CFBundleIdentifier")) !== CODEUP_PREVIEW.appId
   ) {
-    throw new CodeupMacInstallError("The selected application is not Codeup Preview.");
+    throw new CodeupMacInstallError({ message: "The selected application is not Codeup Preview." });
   }
 }
 
@@ -105,9 +110,9 @@ export async function prepareCodeupMacInstall(input: {
       appPath.startsWith("/Volumes/") ||
       appPath.includes("/AppTranslocation/")
     ) {
-      throw new CodeupMacInstallError(
-        "Move Codeup Preview to a writable Applications folder before updating.",
-      );
+      throw new CodeupMacInstallError({
+        message: "Move Codeup Preview to a writable Applications folder before updating.",
+      });
     }
     if (
       !parseSemver(input.currentVersion) ||
@@ -116,14 +121,17 @@ export async function prepareCodeupMacInstall(input: {
       !isCodeupPreviewVersion(download.version) ||
       compareSemverVersions(download.version, input.currentVersion) <= 0
     ) {
-      throw new CodeupMacInstallError(
-        "Install a newer Codeup Preview release; other channels and downgrades are not supported.",
-      );
+      throw new CodeupMacInstallError({
+        message:
+          "Install a newer Codeup Preview release; other channels and downgrades are not supported.",
+      });
     }
     step = "checking the installed application";
     await requirePreviewBundle(appPath);
     if ((await bundleValue(appPath, "CFBundleShortVersionString")) !== input.currentVersion) {
-      throw new CodeupMacInstallError("The installed app changed. Restart it before updating.");
+      throw new CodeupMacInstallError({
+        message: "The installed app changed. Restart it before updating.",
+      });
     }
     const parent = NodePath.dirname(appPath);
     const lock = NodePath.join(parent, ".t3-codeup-install.lock");
@@ -194,11 +202,11 @@ export async function prepareCodeupMacInstall(input: {
     return { appPath, staged, backup, work, lock, script, currentVersion: input.currentVersion };
   } catch (cause) {
     if (work) await NodeFSP.rm(work, { recursive: true, force: true }).catch(() => {});
-    if (cause instanceof CodeupMacInstallError) throw cause;
-    throw new CodeupMacInstallError(
-      `Could not finish ${step}. The installed app is unchanged. Try the release DMG.`,
-      { cause },
-    );
+    if (isCodeupMacInstallError(cause)) throw cause;
+    throw new CodeupMacInstallError({
+      message: `Could not finish ${step}. The installed app is unchanged. Try the release DMG.`,
+      cause,
+    });
   }
 }
 
@@ -248,10 +256,11 @@ export async function launchCodeupMacInstall(
     });
   } catch (cause) {
     await NodeFSP.rm(prepared.work, { recursive: true, force: true }).catch(() => {});
-    throw new CodeupMacInstallError(
-      "Could not start the installer. The installed app is unchanged. Try the release DMG.",
-      { cause },
-    );
+    throw new CodeupMacInstallError({
+      message:
+        "Could not start the installer. The installed app is unchanged. Try the release DMG.",
+      cause,
+    });
   } finally {
     await log?.close();
   }
