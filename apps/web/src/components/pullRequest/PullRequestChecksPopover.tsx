@@ -85,7 +85,7 @@ function ChecksBody({
                 key={`${index}:${check.name}`}
                 className="col-span-full grid grid-cols-subgrid items-center text-xs"
               >
-                <PullRequestCheckStatusIcon status={check.status} />
+                <PullRequestCheckStatusIcon check={check} />
                 <Tooltip>
                   <TooltipTrigger render={<span className="min-w-0 truncate">{check.name}</span>} />
                   <TooltipPopup side="top">{check.description ?? check.name}</TooltipPopup>

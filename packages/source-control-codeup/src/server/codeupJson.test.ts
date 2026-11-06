@@ -1,8 +1,66 @@
-import { PullRequestComment } from "@t3tools/contracts";
+import { PullRequestCheck, PullRequestComment } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { activity, Comments, MergeRequest, summary } from "./codeupJson.ts";
+import {
+  activity,
+  checks,
+  Checks,
+  Comments,
+  MergeRequest,
+  normalizeChecks,
+  summary,
+} from "./codeupJson.ts";
+
+const decodeChecks = Schema.decodeUnknownSync(Checks);
+const decodeCheck = Schema.decodeUnknownSync(PullRequestCheck);
+
+describe("Codeup check execution states", () => {
+  it.each([
+    ["NOT_RUN", "pending", "not-run"],
+    ["WAITING", "pending", "queued"],
+    ["QUEUED", "pending", "queued"],
+    ["RUNNING", "pending", undefined],
+    ["IN_PROGRESS", "pending", undefined],
+    ["pending", "pending", "unknown"],
+    ["FUTURE", "pending", "unknown"],
+    ["PASS", "success", undefined],
+    ["FAIL", "failure", undefined],
+    ["CANCELED", "cancelled", undefined],
+  ])("preserves %s through the check contract", (state, status, pendingReason) => {
+    const data = decodeChecks(
+      normalizeChecks({
+        latest: true,
+        item_count: 1,
+        check_list: [{ task_name: "MR check", state, required: true, invalid: false }],
+        check_stat_info: { in_progress_count: 1, running_count: 0 },
+      }),
+    );
+    const result = decodeCheck(checks(data, "head")[0]);
+    expect(result).toMatchObject({ name: "MR check", status, required: true });
+    expect(result.pendingReason).toBe(pendingReason);
+  });
+
+  it("does not present stale successes or results for another commit as running", () => {
+    const data = decodeChecks({
+      latest: true,
+      itemCount: 2,
+      checkList: [{ taskName: "Invalid build", state: "PASS", invalid: true }],
+      commitStatuses: [{ context: "Old commit", state: "success", sha: "old" }],
+    });
+    expect(
+      checks(data, "head").map(({ status, pendingReason }) => ({ status, pendingReason })),
+    ).toEqual([
+      { status: "pending", pendingReason: "unknown" },
+      { status: "pending", pendingReason: "unknown" },
+    ]);
+    expect(
+      checks({ ...data, latest: false }, "old").every(
+        (check) => check.status === "pending" && check.pendingReason === "unknown",
+      ),
+    ).toBe(true);
+  });
+});
 
 const root = {
   comment_biz_id: "root",

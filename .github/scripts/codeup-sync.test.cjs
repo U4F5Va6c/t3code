@@ -25,7 +25,12 @@ function fixture() {
   const upstream = path.join(root, "upstream");
   const work = path.join(root, "work");
   const command = (cwd, ...args) =>
-    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: args[0] === "merge" ? 2048 : undefined,
+    }).trim();
   command(root, "init", "--bare", origin);
   command(root, "init", "-b", "codeup-integration", upstream);
   for (const [key, value] of [
@@ -150,6 +155,8 @@ const core = { info() {} };
 test("PR creation and repeated checks never dispatch while the PR event is registering", async () => {
   const f = fixture();
   try {
+    for (let index = 0; index < 100; index++)
+      fs.writeFileSync(path.join(f.upstream, `upstream-feature-${index}.txt`), "new feature\n");
     f.addNightly(1);
     assert.equal((await sync({ ...f, context, core })).status, "updated");
     const firstHead = f.run("rev-parse", "HEAD");

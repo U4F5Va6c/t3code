@@ -105,10 +105,10 @@ describe("ElectronUpdater", () => {
     Effect.gen(function* () {
       appMock.getVersion.mockReturnValue("0.0.46-codeup.20261012.16");
       installerMock.prepareCodeupMacInstall.mockRejectedValue(
-        new CodeupMacInstallError(
-          "Move Codeup Preview to a writable Applications folder before updating.",
-          { cause: new Error("private internal detail") },
-        ),
+        new CodeupMacInstallError({
+          message: "Move Codeup Preview to a writable Applications folder before updating.",
+          cause: new Error("private internal detail"),
+        }),
       );
       const updater = yield* ElectronUpdater.ElectronUpdater;
       const error = yield* updater

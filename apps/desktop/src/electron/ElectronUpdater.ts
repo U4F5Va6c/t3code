@@ -9,7 +9,7 @@ import { isCodeupPreviewVersion } from "@t3tools/shared/codeupPreview";
 
 import { autoUpdater } from "electron-updater";
 import {
-  CodeupMacInstallError,
+  isCodeupMacInstallError,
   launchCodeupMacInstall,
   prepareCodeupMacInstall,
 } from "./CodeupMacInstaller.ts";
@@ -54,7 +54,7 @@ export class ElectronUpdaterQuitAndInstallError extends Schema.TaggedError<Elect
   },
 ) {
   override get message(): string {
-    if (this.cause instanceof CodeupMacInstallError) return this.cause.message;
+    if (isCodeupMacInstallError(this.cause)) return this.cause.message;
     return `Electron updater failed to quit and install the update on channel ${this.channel ?? "default"} (silent: ${this.isSilent}, force run after: ${this.isForceRunAfter}).`;
   }
 }

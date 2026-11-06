@@ -45,7 +45,7 @@ import {
 import { PullRequestChecksPopover } from "../pullRequest/PullRequestChecksPopover";
 import {
   pullRequestChecksState,
-  PullRequestCheckStatusIcon,
+  pullRequestChecksStatePresentation,
   PullRequestDiffStat,
   resolvePullRequestState,
 } from "../pullRequest/pullRequestPresentation";
@@ -163,7 +163,6 @@ export function ThreadDetailsPrRow({
     reference,
     terminology,
     onSuccess: () => {
-      detailQuery.refresh();
       checksQuery.refresh();
       onActed?.();
     },
@@ -182,6 +181,8 @@ export function ThreadDetailsPrRow({
   }
   const conflicting = isPullRequestConflicting(detail);
   const checksState = detail === null ? "none" : classifyPullRequestChecks(detail.checks);
+  const checksPresentation =
+    checksState === "none" ? null : pullRequestChecksStatePresentation(checksState);
   const checksRollup = detail === null ? null : pullRequestChecksState(detail.checks);
   const selectedMergeMethod = resolvePullRequestMergeMethod(
     allowedPullRequestMergeMethods(detail),
@@ -212,6 +213,8 @@ export function ThreadDetailsPrRow({
         url: detail.url,
         headBranch: detail.headBranch,
         baseBranch: detail.baseBranch,
+        state: detail.state,
+        isDraft: detail.isDraft,
         reviewThreads: [],
         comments: [],
         checks: detail.checks,
@@ -273,16 +276,11 @@ export function ThreadDetailsPrRow({
                 {detail.baseBranch} ← {detail.headBranch}
               </div>
             </div>
-            {detail.state === "open" && checksState !== "none" ? (
+            {detail.state === "open" && checksPresentation !== null ? (
               <div className="flex min-w-0 items-center gap-2">
-                <PullRequestCheckStatusIcon
-                  status={
-                    checksState === "failing"
-                      ? "failure"
-                      : checksState === "pending"
-                        ? "pending"
-                        : "success"
-                  }
+                <checksPresentation.Icon
+                  aria-hidden
+                  className={cn("size-3.5 shrink-0", checksPresentation.toneClassName)}
                 />
                 <div className="min-w-0 truncate text-foreground/75">
                   {describePullRequestChecks(detail.checks)}

@@ -285,27 +285,35 @@ export const stats = (compare: typeof Compare.Type) => {
     }
   return { additions, deletions, changedFiles: compare.diffs.length };
 };
-const checkStatus = (value: string): PullRequestCheck["status"] => {
+const checkStatus = (value: string): Pick<PullRequestCheck, "status" | "pendingReason"> => {
   switch (value.toUpperCase()) {
     case "PASS":
     case "SUCCESS":
-      return "success";
+      return { status: "success" };
     case "FAIL":
     case "FAILED":
     case "FAILURE":
     case "ERROR":
-      return "failure";
+      return { status: "failure" };
     case "CANCELLED":
     case "CANCELED":
-      return "cancelled";
+      return { status: "cancelled" };
+    case "NOT_RUN":
+      return { status: "pending", pendingReason: "not-run" };
+    case "WAITING":
+    case "QUEUED":
+      return { status: "pending", pendingReason: "queued" };
+    case "RUNNING":
+    case "IN_PROGRESS":
+      return { status: "pending" };
     default:
-      return "pending";
+      return { status: "pending", pendingReason: "unknown" };
   }
 };
 export function checks(data: typeof Checks.Type, head: string): PullRequestCheck[] {
   const results: PullRequestCheck[] = (data.checkList ?? []).map((c) => ({
     name: c.taskName || "Codeup CI",
-    status: data.latest && !c.invalid ? checkStatus(c.state) : "pending",
+    ...checkStatus(data.latest && !c.invalid ? c.state : "unknown"),
     description: c.invalid || !data.latest ? "Result is no longer current." : null,
     url: c.buildUrl ?? null,
     required: c.required ?? false,
@@ -313,7 +321,7 @@ export function checks(data: typeof Checks.Type, head: string): PullRequestCheck
   for (const c of data.commitStatuses ?? [])
     results.push({
       name: c.context || "Commit status",
-      status: data.latest && c.sha === head ? checkStatus(c.state) : "pending",
+      ...checkStatus(data.latest && c.sha === head ? c.state : "unknown"),
       description: c.sha === head ? (c.description ?? null) : "Result belongs to another commit.",
       url: c.targetUrl ?? null,
       required: c.required ?? false,
@@ -323,14 +331,14 @@ export function checks(data: typeof Checks.Type, head: string): PullRequestCheck
   if (data.itemCount > results.length || data.checkRuns?.tiledCheckRuns?.length)
     results.push({
       name: "Codeup checks",
-      status: data.latest ? checkStatus(data.status ?? "unknown") : "pending",
+      ...checkStatus(data.latest ? (data.status ?? "unknown") : "unknown"),
       description: "Additional checks are available on Codeup.",
       url: null,
     });
   if (!data.latest && !results.length)
     results.push({
       name: "Codeup checks",
-      status: "pending",
+      ...checkStatus("unknown"),
       description: "Waiting for the current patch set.",
       url: null,
     });

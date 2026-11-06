@@ -339,8 +339,8 @@ export const make = Effect.gen(function* () {
             ).pipe(
               Effect.catch((cause) =>
                 lookup.pipe(
-                  Effect.map(() => undefined),
-                  Effect.catch(() => Effect.fail(cause)),
+                  Effect.asVoid,
+                  Effect.mapError(() => cause),
                 ),
               ),
               Effect.andThen(lookup.pipe(Effect.mapError(mapError(input.cwd, "createRepository")))),

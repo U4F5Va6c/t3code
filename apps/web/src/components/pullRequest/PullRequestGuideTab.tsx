@@ -17,6 +17,7 @@ import {
   pullRequestReviewKey,
   usePullRequestReviewStore,
 } from "./pullRequestReviewStore";
+import type { PullRequestCompletionScope } from "./PullRequestMarkdownTextarea";
 
 export function PullRequestGuideTab({
   environmentId,
@@ -28,6 +29,7 @@ export function PullRequestGuideTab({
   persistedDrafts = false,
   viewer,
   rangeComments,
+  completionScope,
   onAskAboutLines,
   onAskAboutStop,
   onFinishReview,
@@ -44,6 +46,7 @@ export function PullRequestGuideTab({
   viewer?: string | undefined;
   /** Opens an agent thread about lines of the change. Null where no thread can be opened. */
   rangeComments: boolean;
+  completionScope: PullRequestCompletionScope | null;
   onAskAboutLines: ((comment: ReviewCommentContext, request: string) => void) | null;
   onAskAboutStop:
     | ((stop: PullRequestReviewGuideStop, index: number, question: string) => void)
@@ -73,6 +76,7 @@ export function PullRequestGuideTab({
       : {
           canComment: canComment && !persistedDrafts,
           rangeComments,
+          completionScope,
           pending,
           onComment: ({ path, oldPath, position, startPosition, body }) =>
             addComment(reviewKey, {

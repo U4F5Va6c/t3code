@@ -150,6 +150,7 @@ async function sync({ github, context, core, run = git, dryRun = false, autoMerg
       run(
         "merge",
         "--no-ff",
+        "--no-stat",
         ref,
         "-m",
         `chore-上游同步-合入${ref === commit.sha ? nightly.tag_name : "集成分支"}-#15`,
