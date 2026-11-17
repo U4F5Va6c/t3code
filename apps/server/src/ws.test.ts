@@ -1916,7 +1916,7 @@ it.effect("a git action that fails partway still refreshes the repository status
     const services = Layer.mergeAll(
       layerUnusedConfigRpcServices,
       Layer.mock(GitWorkflowService.GitWorkflowService)({
-        runStackedAction: () => Effect.fail(failure),
+        runStackedActionAndRefresh: () => Effect.fail(failure),
       }),
       Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
         refreshStatus: (cwd) =>

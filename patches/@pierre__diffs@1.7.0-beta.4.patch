@@ -135,10 +135,33 @@ index 96d4fb137ea683b66381b1ce6e47e8708a89366c..13f2564897a5bf53a8f311300003b3ea
  	/**
  	* Re-measure the '0' character width against the font that is loaded right
 diff --git a/dist/utils/parsePatchFiles.js b/dist/utils/parsePatchFiles.js
-index 48568bd..f27123f 100644
 --- a/dist/utils/parsePatchFiles.js
 +++ b/dist/utils/parsePatchFiles.js
-@@ -339,7 +339,7 @@ function parsePatchFiles(data, options = {}) {
+@@ -54,6 +54,7 @@
+ }
+ function _processFile(fileDiffString, { cacheKey, disableLineMatching = false, isGitDiff = GIT_DIFF_FILE_BREAK_REGEX.test(fileDiffString), oldFile, newFile, throwOnError = false } = {}) {
+ 	let lastHunkEnd = 0;
++	let hasRenameHeader = false;
+ 	const hunks = splitAtLinePrefix(fileDiffString, "@@ ");
+ 	let currentFile;
+ 	const isPartial = oldFile == null || newFile == null;
+@@ -135,6 +136,7 @@
+ 						if (newObjectId != null) currentFile.newObjectId = detachString(newObjectId);
+ 						if (mode != null) currentFile.mode = detachString(mode);
+ 					}
++					if (line.startsWith("rename from ")) hasRenameHeader = true;
+ 					if (line.startsWith("rename from ") || line.startsWith("copy from ")) currentFile.prevName = detachString(decodeDiffFileName(line.slice(line.startsWith("rename") ? 12 : 10)));
+ 					if (line.startsWith("rename to ") || line.startsWith("copy to ")) currentFile.name = detachString(decodeDiffFileName(line.slice(line.startsWith("rename") ? 10 : 8)));
+ 				}
+@@ -314,6 +316,7 @@
+ 		} else if ((oldFile == null || oldFile.contents === "") && newFile != null && newFile.contents !== "") currentFile.type = "new";
+ 		else if (oldFile != null && oldFile.contents !== "" && (newFile == null || newFile.contents === "")) currentFile.type = "deleted";
+ 	}
++	if (hasRenameHeader && currentFile.type === "change") currentFile.type = currentFile.hunks.length > 0 ? "rename-changed" : "rename-pure";
+ 	if (currentFile.type !== "rename-pure" && currentFile.type !== "rename-changed") currentFile.prevName = void 0;
+ 	if (!disableLineMatching) realignChangeContentBySimilarity(currentFile);
+ 	return currentFile;
+@@ -339,7 +342,7 @@
  	return patches;
  }
  function decodeDiffFileName(value, stripGitPrefix = false) {
