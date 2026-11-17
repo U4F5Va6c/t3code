@@ -9,6 +9,27 @@ const run = Migrator.make({});
 // Fork migrations use their own ledger so upstream can keep assigning sequential ids.
 export const runCodeupMigrations = Effect.fn("runCodeupMigrations")(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const tables = yield* sql<{ readonly name: string }>`
+    SELECT name FROM sqlite_master WHERE type = 'table'
+    AND name IN ('effect_sql_migrations', 'work_item_creation_receipts', 'codeup_sql_migrations')
+  `;
+  const legacy = tables.some((table) => table.name === "effect_sql_migrations")
+    ? yield* sql`
+        SELECT migration_id FROM effect_sql_migrations
+        WHERE migration_id = 62 AND name = 'WorkItemCreationReceipts'
+      `
+    : [];
+  if (legacy.length === 0) {
+    if (!tables.some((table) => table.name === "work_item_creation_receipts")) return;
+    if (
+      tables.some((table) => table.name === "codeup_sql_migrations") &&
+      (yield* sql`
+        SELECT migration_id FROM codeup_sql_migrations
+        WHERE migration_id = 1 AND name = 'WorkItemCreationReceipts'
+      `).length > 0
+    )
+      return;
+  }
   yield* sql.withTransaction(
     Effect.gen(function* () {
       const tables = yield* sql<{ readonly name: string }>`

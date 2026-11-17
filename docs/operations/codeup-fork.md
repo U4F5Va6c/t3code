@@ -63,7 +63,7 @@ Codeup git host 与 API host 分离；凭据、缓存和资源身份包含组织
 
 ## 开发与验证
 
-按根 README 安装 Vite+；当前 package.json 要求 Node `26.12.1`，包管理器为 `pnpm@12.14.0`。Vite+ 按项目配置选择工具链，不改全局默认。
+按根 README 安装 Vite+；当前 package.json 要求 Node `26.13.1`，包管理器为 `pnpm@12.14.0`。Vite+ 按项目配置选择工具链，不改全局默认。
 
 开发使用独立状态：
 
