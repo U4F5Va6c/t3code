@@ -169,7 +169,7 @@ jobs:
       - name: Install Electron
         run: vp run --filter @t3tools/desktop ensure:electron
       - name: Verify Fork native installer
-        run: vp run --filter @t3tools/desktop test src/electron/CodeupMacInstaller.test.ts src/electron/ElectronUpdater.test.ts
+        run: vp run --filter @t3tools/desktop test src/electron/CodeupMacInstaller.test.ts src/electron/CodeupElectronUpdater.test.ts src/electron/ElectronUpdater.test.ts
       - name: Resolve shared Codeup version
         if: needs.resolve.outputs.build == 'true'
         env:
@@ -208,7 +208,7 @@ jobs:
       - name: Build Mac standalone backend
         if: needs.resolve.outputs.build == 'true'
         env:
-          VP_NODE_VERSION: "26.12.1"
+          VP_NODE_VERSION: "26.13.1"
         run: |
           node apps/server/scripts/cli.ts build-exe --verbose
           mkdir -p "$RUNNER_TEMP/cli-resource-monitor/darwin-arm64"
@@ -280,9 +280,12 @@ jobs:
           mkdir -p "$RUNNER_TEMP/cli-resource-monitor/linux-x64"
           cp native/resource-monitor/target/release/t3-resource-monitor "$RUNNER_TEMP/cli-resource-monitor/linux-x64/"
       - name: Build and verify standalone backend
+        # The upstream CLI archive bundles libatomic and sets its relative RUNPATH.
         env:
-          VP_NODE_VERSION: "26.12.1"
+          VP_NODE_VERSION: "26.13.1"
         run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf libatomic1
           node apps/server/scripts/cli.ts build-exe --verbose
           node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$CODEUP_VERSION" --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
           node scripts/smoke-cli-archive.ts --archive release-cli/*.tar.gz --expect-version "$CODEUP_VERSION"

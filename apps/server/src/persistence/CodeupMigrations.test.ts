@@ -45,6 +45,9 @@ describe("Codeup migrations", () => {
       yield* sql`INSERT INTO work_item_creation_receipts ${sql.insert(receipt)}`;
       yield* runMigrations();
 
+      yield* sql`PRAGMA query_only = ON`;
+      assert.deepStrictEqual(yield* runMigrations(), []);
+
       assert.deepStrictEqual(yield* sql`SELECT * FROM work_item_creation_receipts`, [receipt]);
       assert.deepStrictEqual(yield* sql`SELECT migration_id, name FROM codeup_sql_migrations`, [
         { migration_id: 1, name: "WorkItemCreationReceipts" },
