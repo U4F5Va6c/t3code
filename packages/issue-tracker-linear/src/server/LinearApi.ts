@@ -264,6 +264,7 @@ export const make = Effect.gen(function* () {
     host.credentials
       .get(KIND)
       .pipe(
+        Effect.map(Option.flatMap(Option.fromNullOr)),
         Effect.flatMap(
           Effect.fromOption(() =>
             fail(operation, "unauthenticated", "Linear is not connected on this server."),

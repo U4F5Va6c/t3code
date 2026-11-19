@@ -110,12 +110,12 @@ function TrackerRow({
   const [failure, setFailure] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const submit = async (token: string | null) => {
+  const submit = async (input: { token: string | null } | { source: "environment" }) => {
     setBusy(true);
     setFailure(null);
     const result = await connect({
       environmentId,
-      input: { tracker: tracker.tracker, token },
+      input: { tracker: tracker.tracker, ...input },
     });
     setBusy(false);
     if (result._tag === "Success") return;
@@ -174,7 +174,11 @@ function TrackerRow({
                 title={<label htmlFor={inputId}>{tracker.credential.label}</label>}
                 description={
                   <>
-                    <T>Stored on the server.</T>
+                    {tracker.usesEnvironmentLogin ? (
+                      <T>Using the environment's Yunxiao login.</T>
+                    ) : (
+                      <T>Stored on the server.</T>
+                    )}
                     {tracker.credential.helpUrl ? (
                       <>
                         {" "}
@@ -201,10 +205,10 @@ function TrackerRow({
                       id={inputId}
                       size="sm"
                       className="min-w-0 flex-1"
-                      configured={tracker.connected}
+                      configured={tracker.connected && !tracker.usesEnvironmentLogin}
                       value=""
                       onCommit={(next) => {
-                        if (next.trim()) void submit(next.trim());
+                        if (next.trim()) void submit({ token: next.trim() });
                       }}
                     />
                     {tracker.connected ? (
@@ -212,7 +216,7 @@ function TrackerRow({
                         type="button"
                         size="icon-sm"
                         variant="ghost-destructive"
-                        onClick={() => void submit(null)}
+                        onClick={() => void submit({ token: null })}
                         aria-label={gt("Disconnect {tracker}", { tracker: tracker.displayName })}
                       >
                         <XIcon className="size-3.5" />
@@ -221,6 +225,15 @@ function TrackerRow({
                   </div>
                 }
               />
+              {tracker.credential.reuseEnvironmentLogin && !tracker.usesEnvironmentLogin ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void submit({ source: "environment" })}
+                >
+                  {gt("Use existing Yunxiao login")}
+                </Button>
+              ) : null}
               {usable ? (
                 <ProjectBindings
                   environmentId={environmentId}

@@ -109,6 +109,7 @@ export class CodeupApi extends Context.Service<
     readonly getRepository: (
       repository: string,
     ) => Effect.Effect<typeof Repository.Type, CodeupApiError>;
+    readonly configuredOrganizationIds: Effect.Effect<ReadonlyArray<string>, CodeupApiError>;
     readonly probe: Effect.Effect<
       ReadonlyArray<{ readonly organizationId: string; readonly error: CodeupApiError | null }>,
       CodeupApiError
@@ -131,6 +132,13 @@ const make = Effect.gen(function* () {
       (cause) =>
         new CodeupApiError({ reason: "unavailable", status: null, cause: Redacted.make(cause) }),
     ),
+  );
+  const configuredOrganizationIds = tokens.pipe(
+    Effect.map((saved) => {
+      const ids = Object.keys(saved).filter((key) => settingsSecretLiteral(saved[key]).trim());
+      const environmentOrganization = environment.ALIBABA_CLOUD_YUNXIAO_ORGANIZATION_ID;
+      return ids.length > 0 ? ids : environmentOrganization ? [environmentOrganization] : [];
+    }),
   );
 
   const request = Effect.fn("CodeupApi.request")(function* (
@@ -335,12 +343,11 @@ const make = Effect.gen(function* () {
   return CodeupApi.of({
     request,
     getRepository,
-    probe: tokens.pipe(
-      Effect.flatMap((saved) =>
+    configuredOrganizationIds,
+    probe: configuredOrganizationIds.pipe(
+      Effect.flatMap((organizations) =>
         Effect.forEach(
-          Object.keys(saved).filter((key) => settingsSecretLiteral(saved[key]).trim()).length
-            ? Object.keys(saved).filter((key) => settingsSecretLiteral(saved[key]).trim())
-            : [environment.ALIBABA_CLOUD_YUNXIAO_ORGANIZATION_ID ?? ""],
+          organizations.length > 0 ? organizations : [""],
           (organizationId) =>
             (organizationId
               ? request({

@@ -8,7 +8,7 @@ import type {
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useNavigation } from "@react-navigation/native";
-import { useGT, useMessages } from "gt-react-native";
+import { T, useGT, useMessages } from "gt-react-native";
 import { useState } from "react";
 import { Linking, Platform, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
@@ -134,10 +134,10 @@ export function IssueTrackerCredentialForm(props: {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const submit = async (token: string | null) => {
+  const submit = async (input: { token: string | null } | { source: "environment" }) => {
     setBusy(true);
     setFailure(null);
-    const result = await connect({ environmentId, input: { tracker: tracker.tracker, token } });
+    const result = await connect({ environmentId, input: { tracker: tracker.tracker, ...input } });
     setBusy(false);
     if (!AsyncResult.isFailure(result)) {
       setDraft("");
@@ -153,17 +153,22 @@ export function IssueTrackerCredentialForm(props: {
       <SecretTextInput
         accessibilityLabel={tracker.credential.label}
         placeholder={
-          tracker.connected
+          tracker.connected && !tracker.usesEnvironmentLogin
             ? gt("Saved. Enter a new value to replace it")
             : tracker.credential.label
         }
         value={draft}
         onChangeText={setDraft}
         onSubmitEditing={(value) => {
-          if (value.trim()) void submit(value.trim());
+          if (value.trim()) void submit({ token: value.trim() });
         }}
         editable={!locked}
       />
+      {tracker.usesEnvironmentLogin ? (
+        <Text className="text-xs text-muted-foreground">
+          <T>Using the environment's Yunxiao login.</T>
+        </Text>
+      ) : null}
       {failure ? (
         <Text selectable className="text-xs text-danger-foreground">
           {failure}
@@ -178,13 +183,22 @@ export function IssueTrackerCredentialForm(props: {
             onPress={() => void Linking.openURL(helpUrl).catch(() => undefined)}
           />
         ) : null}
+        {tracker.credential.reuseEnvironmentLogin && !tracker.usesEnvironmentLogin ? (
+          <Button
+            label={gt("Use existing Yunxiao login")}
+            tone="secondary"
+            size="compact"
+            disabled={locked}
+            onPress={() => void submit({ source: "environment" })}
+          />
+        ) : null}
         {tracker.connected ? (
           <Button
             label={gt("Disconnect")}
             tone="secondary"
             size="compact"
             disabled={locked}
-            onPress={() => void submit(null)}
+            onPress={() => void submit({ token: null })}
           />
         ) : null}
         <Button
@@ -197,7 +211,7 @@ export function IssueTrackerCredentialForm(props: {
           size="compact"
           loading={busy}
           disabled={locked || !draft.trim()}
-          onPress={() => void submit(draft.trim())}
+          onPress={() => void submit({ token: draft.trim() })}
         />
       </View>
     </View>

@@ -560,6 +560,7 @@ export const StandaloneIssueTrackerDescriptor = Schema.Struct({
     label: TrimmedNonEmptyString,
     /** Where to mint one, or null when the tracker has no stable page for it. */
     helpUrl: Schema.NullOr(TrimmedNonEmptyString),
+    reuseEnvironmentLogin: Schema.optional(Schema.Literal(true)),
   }),
 });
 export type StandaloneIssueTrackerDescriptor = typeof StandaloneIssueTrackerDescriptor.Type;
@@ -586,6 +587,7 @@ export const IssueTrackerConnection = Schema.Struct({
   ...StandaloneIssueTrackerDescriptor.fields,
   /** A credential is stored. It may still be rejected, which `account` being null reports. */
   connected: Schema.Boolean,
+  usesEnvironmentLogin: Schema.optional(Schema.Literal(true)),
   /** Who the credential signs in as, or null when there is none or it was refused. */
   account: Schema.NullOr(TrimmedNonEmptyString),
   /** Why a stored credential did not work, when it did not. */
@@ -604,10 +606,13 @@ export const IssueTrackerConnectionList = Schema.Struct({
 export type IssueTrackerConnectionList = typeof IssueTrackerConnectionList.Type;
 
 /** A credential for one standalone tracker; `null` disconnects it and unbinds its projects. */
-export const IssueTrackerConnectInput = Schema.Struct({
-  tracker: IssueTrackerKind,
-  token: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
-});
+export const IssueTrackerConnectInput = Schema.Union([
+  Schema.Struct({
+    tracker: IssueTrackerKind,
+    token: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
+  }),
+  Schema.Struct({ tracker: IssueTrackerKind, source: Schema.Literal("environment") }),
+]);
 export type IssueTrackerConnectInput = typeof IssueTrackerConnectInput.Type;
 
 export const IssueTrackerBindProjectInput = Schema.Struct({

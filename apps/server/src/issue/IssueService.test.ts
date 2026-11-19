@@ -18,12 +18,15 @@ import {
 } from "@t3tools/source-control-core/server/IssueTracker";
 
 import { PersistenceSqlError } from "../persistence/Errors.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as IssueService from "./IssueService.ts";
+import * as IssueTrackerConnections from "./IssueTrackerConnections.ts";
+import * as IssueTrackerHostLive from "./IssueTrackerHostLive.ts";
 import * as IssueTrackerRegistry from "./IssueTrackerRegistry.ts";
 
 const GITHUB = IssueTrackerKind.make("github");
@@ -510,6 +513,51 @@ describe("IssueService", () => {
 });
 
 describe("IssueService with a standalone tracker", () => {
+  it.effect("switches a tracker to the environment login and clears it on disconnect", () =>
+    Effect.gen(function* () {
+      const login = { account: "environment", scopes: [{ key: "ENG", name: "Engineering" }] };
+      const tracker: StandaloneIssueTrackerApi = {
+        ...fakeStandaloneTracker(),
+        probeEnvironmentLogin: Effect.succeed(login),
+      };
+      const secretKey = IssueTrackerHostLive.issueTrackerSecretName(tracker.kind);
+      const secrets = new Map<string, Uint8Array>([
+        [secretKey, new TextEncoder().encode("legacy-token")],
+      ]);
+      const projectId = "web" as ProjectId;
+      const bindings = new Map([[projectId, { tracker: LINEAR, scope: "ENG" }]]);
+      const registry = IssueTrackerRegistry.fromTrackers([tracker]);
+      const layer = IssueTrackerConnections.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(IssueTrackerRegistry.IssueTrackerRegistry, registry),
+            Layer.mock(ServerSecretStore.ServerSecretStore)({
+              get: (name) => Effect.sync(() => Option.fromUndefinedOr(secrets.get(name))),
+              set: (name, value) => Effect.sync(() => void secrets.set(name, value)),
+              remove: (name) => Effect.sync(() => void secrets.delete(name)),
+            }),
+            Layer.mock(IssueTrackerBindings.IssueTrackerBindingsRepository)({
+              list: Effect.succeed(bindings),
+              removeTracker: () => Effect.sync(() => bindings.clear()),
+            }),
+          ),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const connections = yield* IssueTrackerConnections.IssueTrackerConnections;
+        expect((yield* connections.list).trackers[0]).toMatchObject({ account: "julius" });
+        yield* connections.connect({ tracker: LINEAR, source: "environment" });
+        const active = yield* connections.list;
+        expect(active.trackers[0]).toMatchObject({ ...login, usesEnvironmentLogin: true });
+        expect(active.bindings[projectId]).toEqual({ tracker: LINEAR, scope: "ENG" });
+        yield* connections.connect({ tracker: LINEAR, token: null });
+        const disconnected = yield* connections.list;
+        expect(disconnected.trackers[0]).toMatchObject({ connected: false });
+        expect(disconnected.bindings).toEqual({});
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
   it.effect("resolves links without a scope only through an unambiguous project binding", () =>
     Effect.gen(function* () {
       const tracker = {

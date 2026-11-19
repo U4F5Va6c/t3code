@@ -117,8 +117,11 @@ acceptance scope. Testhub and standalone Flow management remain agent/CLI workfl
 
 #### ProjeX
 
-In **Settings → Source control & issues → Issue trackers**, connect ProjeX Central Edition with a
-Yunxiao personal access token that can read organizations, projects, and work items. Bind a
+In **Settings → Source control & issues → Issue trackers → ProjeX**, choose **Use existing Yunxiao
+login** to use the same credentials as Codeup in the selected environment. This works with
+organization tokens saved for Codeup, the server's Yunxiao environment variables, or its
+`aliyun-devops` command. You can also enter a separate Yunxiao personal access token for ProjeX.
+The token needs read access to organizations, projects, work items, and comments. Bind a
 ProjeX project to a T3 Code project in that environment. The **Issues** view then lists its
 requirements, bugs, and tasks. Open an item to read its details and comments or link it to a
 thread. If a ProjeX link omits the project and several bindings are available, use the thread for

@@ -13,10 +13,10 @@ export class IssueTrackerHost extends Context.Service<
   IssueTrackerHost,
   {
     readonly credentials: {
-      /** Read fresh on each call, so a credential saved in Settings applies without a restart. */
+      /** None is disconnected, some(null) uses the environment login, and a string is a token. */
       readonly get: (
         tracker: IssueTrackerKind,
-      ) => Effect.Effect<Option.Option<string>, IssueTrackerError>;
+      ) => Effect.Effect<Option.Option<string | null>, IssueTrackerError>;
     };
   }
 >()("@t3tools/source-control-core/server/IssueTrackerHost") {}
