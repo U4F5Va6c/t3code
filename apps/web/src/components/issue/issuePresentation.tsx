@@ -14,6 +14,7 @@ export const IssueGlyph = { issue: CircleDotIcon } as const;
 /** Name and mark per standalone tracker kind; one missing here falls back to its kind and a ticket. */
 const STANDALONE_TRACKERS: Partial<Record<string, { providerName: string; Icon: Icon }>> = {
   linear: { providerName: "Linear", Icon: LinearIcon },
+  projex: { providerName: "ProjeX", Icon: TicketIcon },
 };
 
 /** A git host's tracker wears the host's own icon and name; a standalone tracker wears its kind. */

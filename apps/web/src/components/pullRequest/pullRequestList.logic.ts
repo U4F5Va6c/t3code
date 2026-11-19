@@ -1,5 +1,6 @@
 import { sourceControlActorLabel } from "@t3tools/client-runtime/source-control-clients";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { msg } from "gt-react";
 
 import { resolvePullRequestAuthorFilter } from "@t3tools/contracts";
 import type {
@@ -64,9 +65,9 @@ const pullRequestViewerKey = (entry: ScopedEntry): string =>
   `${entry.environmentId ?? ""} ${entry.host}`;
 
 const GROUP_LABELS: Record<PullRequestGroupKey, string> = {
-  reviewRequested: "Review requested",
-  authored: "Authored",
-  others: "Others",
+  reviewRequested: msg("Review requested"),
+  authored: msg("Authored"),
+  others: msg("Others"),
 };
 
 function normalize(value: string | null | undefined): string | null {

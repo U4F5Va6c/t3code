@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./server/driver": "./src/server/driver.ts",
+    "./server/projex": "./src/server/ProjexIssueTracker.ts",
     "./shared/definition": {
       "types": "./src/shared/definition.ts",
       "import": "./src/shared/definition.ts"

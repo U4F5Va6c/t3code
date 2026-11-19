@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { isSecretReference, type SettingsSecretValue } from "@t3tools/contracts";
 import { PlusIcon, XIcon } from "lucide-react";
+import { T, useGT } from "gt-react";
 
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
@@ -23,6 +24,7 @@ export function SecretMapField({
   readonly value: unknown;
   readonly onChange: (value: Record<string, SettingsSecretValue>) => void;
 }) {
+  const gt = useGT();
   const [key, setKey] = useState("");
   const [secret, setSecret] = useState("");
   const entries =
@@ -53,8 +55,8 @@ export function SecretMapField({
                 type="password"
                 autoComplete="off"
                 value=""
-                placeholder="Stored secret, enter a new value to replace"
-                aria-label={`Token for ${entryKey}`}
+                placeholder={gt("Stored secret, enter a new value to replace")}
+                aria-label={gt("Token for {name}", { name: entryKey })}
                 spellCheck={false}
                 onCommit={(next) => {
                   if (next.trim()) onChange({ ...entries, [entryKey]: next.trim() });
@@ -65,7 +67,7 @@ export function SecretMapField({
               type="button"
               size="icon-micro"
               variant="ghost-destructive"
-              aria-label={`Remove ${entryKey}`}
+              aria-label={gt("Remove {name}", { name: entryKey })}
               onClick={() => {
                 const next = { ...entries };
                 delete next[entryKey];
@@ -82,8 +84,8 @@ export function SecretMapField({
               id={`${id}-key`}
               size="sm"
               value={key}
-              placeholder={keyPlaceholder ?? "Name"}
-              aria-label={keyPlaceholder ?? "Secret name"}
+              placeholder={keyPlaceholder ?? gt("Name")}
+              aria-label={keyPlaceholder ?? gt("Secret name")}
               spellCheck={false}
               onChange={(event) => setKey(event.target.value)}
             />
@@ -95,8 +97,8 @@ export function SecretMapField({
               type="password"
               autoComplete="off"
               value={secret}
-              placeholder="Token"
-              aria-label="New token"
+              placeholder={gt("Token")}
+              aria-label={gt("New token")}
               spellCheck={false}
               onChange={(event) => setSecret(event.target.value)}
             />
@@ -113,7 +115,7 @@ export function SecretMapField({
             }}
           >
             <PlusIcon />
-            Add
+            <T>Add</T>
           </Button>
         </div>
       </div>

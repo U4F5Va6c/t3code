@@ -4,7 +4,7 @@
 
 Codeup 原生适配的上游基线记录在 [codeup-upstream.json](../../.github/codeup-upstream.json)。构建会核对该 tag 是官方已发布 Nightly、SHA 一致且已合入当前源码。实际可验收提交和制品以 Fork PR 的 Codeup CI 为准。
 
-按用户 2026-10-14 的决定，本 Fork 只把上游已有的 Source Control 体验适配到云效：认证、按 URL 克隆/发布、MR、diff、评审草稿/评论、检查、线程关联和 watch。沿用现有界面、服务及 MCP 入口；接口差异所需的最小适配可以保留，不以云效 API 或 Skill 提供某项能力为理由新增产品功能。ProjeX Work Items、Testhub、独立 Flow 管理、额外仓库/分支目录和新增管理 MCP 均退出产品范围。Skill/CLI 可独立使用，其工作流不作为 T3 原生适配的交付门槛。
+本 Fork 将上游已有的 Source Control 和 Issues 体验适配到云效。Codeup 覆盖认证、按 URL 克隆/发布、MR、diff、评审草稿/评论、检查、线程关联和 watch。ProjeX 复用上游 Issues 的项目绑定、读取和线程关联。工作项写入、Testhub 和独立 Flow 管理继续走 Skill/CLI。
 
 iOS/手机端原生集成、个人签名、真机构建和移动发布继续暂缓，不作为开发、发布或结项前提。当前范围与验收以 [总需求 #1](https://github.com/U4F5Va6c/t3code/issues/1) 和 [客户端验收 #8](https://github.com/U4F5Va6c/t3code/issues/8) 为准。
 
@@ -45,7 +45,7 @@ Fork 自有数据库迁移放在 `CodeupMigrations/`，使用独立的 `codeup_s
 
 Codeup 实现放在新 `packages/source-control-codeup`，复用现有 SourceControlDriver 和 PullRequestProvider 契约。GitHub Provider 内部实现保持不动。设置中使用独立的 Codeup 入口和凭据绑定，仓库 remote 识别后交给对应 driver。
 
-上游已把 provider kind 改为开放 slug，每个 host 包自带 `src/shared/definition.ts`（展示、URL、remote 识别、能力、设置）和 `src/server/` driver。共享定义在 `packages/source-control-definitions` 注册，服务端 driver 在 `sourceControlDefinitions.ts` 注册并自行提供内部服务。最近的完整参照是 `packages/source-control-gitcafe`（REST API + token 设置）；CLI 封装型参照是 `source-control-gitlab`。`source-control-azure-devops` 只覆盖 PR，不含工作项，不作为 ProjeX 参照。新 host 的注册点用以下命令列出，逐一照做：
+上游已把 provider kind 改为开放 slug，每个 host 包自带 `src/shared/definition.ts`（展示、URL、remote 识别、能力、设置）和 `src/server/` driver。共享定义在 `packages/source-control-definitions` 注册，服务端 driver 在 `sourceControlDefinitions.ts` 注册并自行提供内部服务。最近的完整参照是 `packages/source-control-gitcafe`（REST API + token 设置）；CLI 封装型参照是 `source-control-gitlab`。新 host 的注册点用以下命令列出，逐一照做：
 
 ```sh
 git grep -il gitcafe -- apps packages ':!packages/source-control-gitcafe' ':!*.test.*'
@@ -53,7 +53,7 @@ git grep -il gitcafe -- apps packages ':!packages/source-control-gitcafe' ':!*.t
 
 共享类型影响 mobile 时只做必要的兼容处理，不新增手机原生云效入口。
 
-上游没有工作项管理产品；不得另建 ProjeX 页面、工作项与线程/MR 关联模型或编排系统。MR 检查适配只在现有检查、链接和合并门禁中呈现结果，不扩展为流水线运行控制或测试管理平台。
+ProjeX 使用独立 Issues tracker 绑定，因为云效组织、ProjeX 项目和 Codeup 仓库各有自己的身份。工作项短链接省略项目和组织，服务端通过明确的 T3 项目绑定解析，并核对返回工作项的所属项目。MR 检查沿用现有检查、链接和合并门禁。
 
 Codeup git host 与 API host 分离；凭据、缓存和资源身份包含组织范围。只为验证过的 diff、评审、评论、合并和检查声明 capability。GitHub 专属 stack、merge queue、跨环境凭据路由等不会自动适用于 Codeup。
 

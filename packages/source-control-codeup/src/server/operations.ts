@@ -1,5 +1,30 @@
 /** Central Edition routes and CLI names from the official OpenAPI schema. */
 export const operations = {
+  ListOrganizations: {
+    method: "GET",
+    path: "/platform/organizations",
+    cli: "base-list-organizations",
+  },
+  ProjexProjects: {
+    method: "POST",
+    path: "/projex/organizations/{organizationId}/projects:search",
+    cli: "projex-search-projects",
+  },
+  ProjexSearch: {
+    method: "POST",
+    path: "/projex/organizations/{organizationId}/workitems:search",
+    cli: "projex-search-workitems",
+  },
+  ProjexGet: {
+    method: "GET",
+    path: "/projex/organizations/{organizationId}/workitems/{id}",
+    cli: "projex-get-workitem",
+  },
+  ProjexComments: {
+    method: "GET",
+    path: "/projex/organizations/{organizationId}/workitems/{id}/comments",
+    cli: "projex-list-workitem-comments",
+  },
   GetRepository: {
     method: "GET",
     path: "/codeup/organizations/{organizationId}/repositories/{repositoryId}",
