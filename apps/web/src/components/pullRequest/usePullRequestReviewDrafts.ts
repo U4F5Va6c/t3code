@@ -6,11 +6,13 @@ import type {
   PullRequestReviewRevision,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
+import { msg } from "gt-react";
 import { useEffect, useEffectEvent } from "react";
 import { create } from "zustand";
 import { useEnvironmentPresentation } from "~/state/presentation";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { m } from "~/i18n/messages";
 import { toastManager } from "../ui/toast";
 import {
   nextPendingReviewCommentId,
@@ -97,7 +99,8 @@ export function usePullRequestReviewDrafts(
     if (generations.get(key) !== generation) return;
     if (result._tag === "Success" && result.value.viewer === viewer)
       usePlatformDrafts.getState().set(key, result.value);
-    else toastManager.add({ type: "error", title: "Could not refresh private review drafts" });
+    else
+      toastManager.add({ type: "error", title: m(msg("Could not refresh private review drafts")) });
   };
   const refreshOnChange = useEffectEvent(refresh);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Refresh the private host draft snapshot when the mounted review changes account, connection, or revision.
@@ -141,7 +144,7 @@ export function usePullRequestReviewDrafts(
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
-        title: "Draft creation was not confirmed. Refresh before retrying.",
+        title: m(msg("Draft creation was not confirmed. Refresh before retrying.")),
       });
       return false;
     }
@@ -160,7 +163,7 @@ export function usePullRequestReviewDrafts(
     if (result._tag === "Failure") {
       toastManager.add({
         type: "error",
-        title: "Draft deletion was not confirmed. Refresh before retrying.",
+        title: m(msg("Draft deletion was not confirmed. Refresh before retrying.")),
       });
       return false;
     }
@@ -179,7 +182,7 @@ export function usePullRequestReviewDrafts(
       input: { ...stableRef, draftCommentId: id, body },
     });
     if (result._tag === "Failure") {
-      toastManager.add({ type: "error", title: "Draft edit was not confirmed" });
+      toastManager.add({ type: "error", title: m(msg("Draft edit was not confirmed")) });
       return false;
     }
     await refresh();

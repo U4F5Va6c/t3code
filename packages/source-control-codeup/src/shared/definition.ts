@@ -54,6 +54,7 @@ export const definition = defineSourceControl({
   },
   actorLabel: (actor) => actor.name?.trim() || actor.login,
   publicHost: CODEUP_HOST,
+  issueScope: () => null,
   publishDescription: "Codeup Central Edition",
   publishHost: () => CODEUP_HOST,
   newRepositoryOwner: () => null,

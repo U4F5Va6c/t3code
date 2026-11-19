@@ -11,6 +11,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as PlatformError from "effect/PlatformError";
 import { VcsProcessSpawnError, VcsProcessExitError } from "@t3tools/contracts";
 import * as Layer from "effect/Layer";
+import * as IssueTrackerHost from "@t3tools/source-control-core/server/IssueTrackerHost";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
@@ -19,6 +20,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as CodeupApi from "./CodeupApi.ts";
+import * as ProjexIssueTracker from "./ProjexIssueTracker.ts";
 import { driver } from "./driver.ts";
 
 const repository = (path = "org-a/team/repo") => ({
@@ -83,6 +85,90 @@ function harness(
 }
 
 describe("Codeup API and driver", () => {
+  it.effect(
+    "reads a bound ProjeX work item with its own credential and verifies its project",
+    () => {
+      const root = "https://openapi-rdc.aliyuncs.com/oapi/v1";
+      const workitem = {
+        id: "internal-id",
+        serialNumber: "TEAM-12",
+        subject: "Example task",
+        categoryId: "Task",
+        space: { id: "space-a" },
+        creator: { id: "author", name: "Author" },
+        assignedTo: null,
+        status: { name: "Done", displayName: "已完成" },
+        statusStageId: "4",
+        gmtCreate: 1000,
+        gmtModified: 2000,
+        updateStatusAt: 2000,
+        description: "Details",
+      };
+      const path = `${root}/projex/organizations/org-a`;
+      const responses = new Map<string, unknown>([
+        [`${root}/platform/user`, { id: "author", name: "Author" }],
+        [`${root}/platform/organizations`, [{ id: "org-a", name: "Organization" }]],
+        [`${path}/projects:search`, [{ id: "space-a", name: "Project" }]],
+        [`${path}/workitems:search`, [workitem]],
+        [`${path}/workitems/TEAM-12`, workitem],
+        [
+          `${path}/workitems/internal-id/comments`,
+          [{ id: "comment-1", user: { id: "author" }, content: "A comment", gmtCreate: 2000 }],
+        ],
+      ]);
+      const { layer, sent } = harness((request) =>
+        responses.has(request.url) ? json(responses.get(request.url)) : json(null, 404),
+      );
+      return Effect.gen(function* () {
+        const issueTracker = yield* ProjexIssueTracker.make;
+        expect(yield* issueTracker.probeCredential("projex-token")).toEqual({
+          account: "Author",
+          scopes: [{ key: "org-a/space-a", name: "Organization / Project" }],
+        });
+        const target = { cwd: "/tmp", host: "devops.aliyun.com", scope: "org-a/space-a" };
+        const page = yield* issueTracker.listIssues({
+          ...target,
+          involvement: "all",
+          state: "closed",
+          sort: "updated",
+          limit: 10,
+        });
+        expect(page).toMatchObject({
+          items: [{ key: "TEAM-12", state: { category: "closed", closeReason: "completed" } }],
+          nextCursor: null,
+        });
+        const detail = yield* issueTracker.getIssue({ ...target, key: "TEAM-12" });
+        expect(detail).toMatchObject({
+          url: "https://devops.aliyun.com/projex/task/TEAM-12",
+          body: "Details",
+          comments: [{ body: "A comment" }],
+          viewerPermissions: { comment: false, setState: false },
+        });
+        expect(issueTracker.parseIssueUrl(new URL(detail.url))).toEqual({
+          host: target.host,
+          key: "TEAM-12",
+          scope: null,
+        });
+        const error = yield* issueTracker
+          .getIssue({ ...target, scope: "org-a/space-b", key: "TEAM-12" })
+          .pipe(Effect.flip);
+        expect(error.reason).toBe("not-found");
+        expect(sent.filter((request) => request.url.endsWith("/comments"))).toHaveLength(1);
+        const codeup = yield* CodeupApi.CodeupApi;
+        yield* codeup.request({ operation: "ListOrganizations", organizationId: "org-a" });
+        expect(sent.map((request) => request.token)).toEqual([
+          ...Array<string>(7).fill("projex-token"),
+          "token-a",
+        ]);
+      }).pipe(
+        Effect.provideService(IssueTrackerHost.IssueTrackerHost, {
+          credentials: { get: () => Effect.succeedSome("projex-token") },
+        }),
+        Effect.provide(layer),
+      );
+    },
+  );
+
   it.effect("resolves organization token references through the host before calling Codeup", () => {
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,

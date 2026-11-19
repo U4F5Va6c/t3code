@@ -102,7 +102,10 @@ export interface CodeupRequest {
 export class CodeupApi extends Context.Service<
   CodeupApi,
   {
-    readonly request: (input: CodeupRequest) => Effect.Effect<unknown, CodeupApiError>;
+    readonly request: (
+      input: CodeupRequest,
+      credential?: Redacted.Redacted<string>,
+    ) => Effect.Effect<unknown, CodeupApiError>;
     readonly getRepository: (
       repository: string,
     ) => Effect.Effect<typeof Repository.Type, CodeupApiError>;
@@ -130,13 +133,18 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  const request = Effect.fn("CodeupApi.request")(function* (input: CodeupRequest) {
+  const request = Effect.fn("CodeupApi.request")(function* (
+    input: CodeupRequest,
+    credential?: Redacted.Redacted<string>,
+  ) {
     const spec = operations[input.operation];
-    const saved = yield* tokens;
+    const saved = credential === undefined ? yield* tokens : {};
     const organizationId =
-      input.organizationId ??
-      Object.keys(saved)[0] ??
-      environment.ALIBABA_CLOUD_YUNXIAO_ORGANIZATION_ID;
+      credential === undefined
+        ? (input.organizationId ??
+          Object.keys(saved)[0] ??
+          environment.ALIBABA_CLOUD_YUNXIAO_ORGANIZATION_ID)
+        : input.organizationId;
     const savedToken =
       organizationId && Object.hasOwn(saved, organizationId)
         ? settingsSecretLiteral(saved[organizationId]).trim()
@@ -147,7 +155,9 @@ const make = Effect.gen(function* () {
       (!organizationId || environment.ALIBABA_CLOUD_YUNXIAO_ORGANIZATION_ID === organizationId)
         ? environment.ALIBABA_CLOUD_YUNXIAO_ACCESS_TOKEN?.trim()
         : undefined;
-    const token = savedToken || envToken;
+    const token = credential === undefined ? savedToken || envToken : Redacted.value(credential);
+    if (credential !== undefined && !token)
+      return yield* new CodeupApiError({ reason: "unauthenticated", status: null });
     // A child CLI inherits the environment too; it must not reuse an explicitly scoped PAT
     // for a different organization just because the direct HTTP path rejected that scope.
     if (!token && environment.ALIBABA_CLOUD_YUNXIAO_ACCESS_TOKEN?.trim())
