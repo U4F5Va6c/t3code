@@ -87,11 +87,17 @@ export function issueTrackerSummary(
   resolve: MFunctionType = mFallback,
 ): string {
   if (!tracker.connected)
-    return knownTrackerSentence(
-      `Not connected. Add a ${tracker.credential.label.toLowerCase()} to list its issues.`,
-      [msg("Not connected. Add a personal api key to list its issues.")],
-      resolve,
-    );
+    return tracker.credential.reuseEnvironmentLogin
+      ? resolve(
+          msg(
+            "Not connected. Use the environment's Yunxiao login or enter a personal access token.",
+          ),
+        )
+      : knownTrackerSentence(
+          `Not connected. Add a ${tracker.credential.label.toLowerCase()} to list its issues.`,
+          [msg("Not connected. Add a personal api key to list its issues.")],
+          resolve,
+        );
   if (tracker.account === null)
     return tracker.detail ?? resolve(msg("The saved credential was rejected."));
   const linked = Object.values(bindings).filter(

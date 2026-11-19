@@ -55,6 +55,7 @@ describe("Codeup MR creation", () => {
         FileSystem.layerNoop({ readFileString: () => Effect.succeed("Description") }),
         Layer.succeed(Api.CodeupApi, {
           probe: Effect.succeed([]),
+          configuredOrganizationIds: Effect.succeed([]),
           getRepository: () => Effect.succeed(repository),
           request: (request) => {
             requests.push(request);

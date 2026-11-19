@@ -136,17 +136,20 @@ const makeTracker = Effect.gen(function* () {
     .pipe(
       Effect.flatMap((token) =>
         Option.isSome(token)
-          ? Effect.succeed(Redacted.make(token.value))
+          ? Effect.succeed(token.value === null ? undefined : Redacted.make(token.value))
           : Effect.fail(
               failure("readCredential", "unauthenticated", "Connect ProjeX in Settings."),
             ),
       ),
     );
+  const environmentOrganizations = api.configuredOrganizationIds.pipe(
+    Effect.mapError((error) => failure("readEnvironmentLogin", "failed", error.message)),
+  );
 
   const read = <S extends Schema.ConstraintDecoder<unknown, never>>(
     input: CodeupApi.CodeupRequest,
     schema: S,
-    token: Redacted.Redacted<string>,
+    token?: Redacted.Redacted<string>,
   ) =>
     api.request(input, token).pipe(
       Effect.mapError((error) =>
@@ -171,7 +174,7 @@ const makeTracker = Effect.gen(function* () {
 
   const scopesInOrganization = Effect.fn("ProjexIssueTracker.scopesInOrganization")(function* (
     organization: typeof Named.Type,
-    token: Redacted.Redacted<string>,
+    token?: Redacted.Redacted<string>,
   ) {
     const scopes = [];
     for (let page = 1; ; page++) {
@@ -194,6 +197,36 @@ const makeTracker = Effect.gen(function* () {
     }
   });
 
+  const probeLogin = Effect.fn("ProjexIssueTracker.probeLogin")(function* (
+    token?: Redacted.Redacted<string>,
+    organizationId?: string,
+  ) {
+    const target = organizationId === undefined ? {} : { organizationId };
+    const [viewer, organizations] = yield* Effect.all(
+      [
+        read({ operation: "GetUserByToken", ...target }, Viewer, token),
+        read({ operation: "ListOrganizations", ...target }, Names, token),
+      ],
+      { concurrency: 2 },
+    );
+    const eligible =
+      organizationId === undefined
+        ? organizations
+        : organizations.filter((organization) => organization.id === organizationId);
+    if (organizationId !== undefined && eligible.length === 0)
+      return yield* failure(
+        "probeLogin",
+        "unauthenticated",
+        "The Yunxiao login cannot read its configured organization.",
+      );
+    const scopes = yield* Effect.forEach(
+      eligible,
+      (organization) => scopesInOrganization(organization, token),
+      { concurrency: 4 },
+    );
+    return { account: viewer.name?.trim() || viewer.id, scopes: scopes.flat() };
+  });
+
   return {
     kind: KIND,
     capabilities,
@@ -202,31 +235,45 @@ const makeTracker = Effect.gen(function* () {
       displayName: "ProjeX",
       host: HOST,
       scopeNoun: "project",
-      credential: { label: "Yunxiao personal access token", helpUrl: null },
+      credential: {
+        label: "Yunxiao personal access token",
+        helpUrl: null,
+        reuseEnvironmentLogin: true,
+      },
     },
     parseIssueUrl,
-    probeCredential: Effect.fn("ProjexIssueTracker.probeCredential")(function* (value: string) {
-      const token = Redacted.make(value);
-      const [viewer, organizations] = yield* Effect.all(
-        [
-          read({ operation: "GetUserByToken" }, Viewer, token),
-          read({ operation: "ListOrganizations" }, Names, token),
-        ],
-        { concurrency: 2 },
-      );
-      const scopes = yield* Effect.forEach(
+    probeCredential: (token) => probeLogin(Redacted.make(token)),
+    probeEnvironmentLogin: Effect.gen(function* () {
+      const organizations = yield* environmentOrganizations;
+      if (organizations.length === 0) return yield* probeLogin();
+      const [logins, failures] = yield* Effect.partition(
         organizations,
-        (org) => scopesInOrganization(org, token),
+        (organizationId) => probeLogin(undefined, organizationId),
         { concurrency: 4 },
       );
-      return { account: viewer.name?.trim() || viewer.id, scopes: scopes.flat() };
+      const firstFailure = failures[0];
+      if (logins.length === 0 && firstFailure !== undefined) return yield* firstFailure;
+      return {
+        account: [...new Set(logins.map((login) => login.account))].join(", "),
+        scopes: logins.flatMap((login) => login.scopes),
+      };
     }),
     getViewer: Effect.fn("ProjexIssueTracker.getViewer")(function* () {
-      return (yield* read({ operation: "GetUserByToken" }, Viewer, yield* credential)).id;
+      const token = yield* credential;
+      const organizations = token === undefined ? yield* environmentOrganizations : [];
+      const viewer = yield* organizations.length === 0
+        ? read({ operation: "GetUserByToken" }, Viewer, token)
+        : Effect.firstSuccessOf(
+            organizations.map((organizationId) =>
+              read({ operation: "GetUserByToken", organizationId }, Viewer),
+            ),
+          );
+      return viewer.id;
     }),
     listIssues: Effect.fn("ProjexIssueTracker.listIssues")(function* (input) {
       const { organizationId, spaceId } = yield* scopeParts(input.scope, "listIssues");
       if (input.involvement === "mentioned") return { items: [], nextCursor: null };
+      const token = yield* credential;
       const perPage = input.limit;
       const page = input.cursor === undefined ? 1 : Number(input.cursor);
       if (!Number.isSafeInteger(page) || page < 1 || page * perPage > 10_000) {
@@ -244,10 +291,14 @@ const makeTracker = Effect.gen(function* () {
         });
       }
       if (input.involvement !== "all") {
+        const viewer =
+          token === undefined
+            ? (yield* read({ operation: "GetUserByToken", organizationId }, Viewer)).id
+            : input.viewer;
         conditions.push({
           fieldIdentifier: input.involvement === "assigned" ? "assignedTo" : "creator",
           operator: "CONTAINS",
-          value: [input.viewer],
+          value: [viewer],
           toValue: null,
           className: "user",
           format: "list",
@@ -269,7 +320,7 @@ const makeTracker = Effect.gen(function* () {
           },
         },
         WorkItems,
-        yield* credential,
+        token,
       );
       return {
         items: items

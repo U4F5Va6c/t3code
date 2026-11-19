@@ -16,15 +16,21 @@ import {
   type IssueTrackerConnection,
   type IssueTrackerConnectionList,
 } from "@t3tools/contracts";
-import type { StandaloneIssueTrackerApi } from "@t3tools/source-control-core/server/IssueTracker";
+import {
+  IssueTrackerError,
+  type IssueTrackerLogin,
+  type StandaloneIssueTrackerApi,
+} from "@t3tools/source-control-core/server/IssueTracker";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
 import * as IssueService from "./IssueService.ts";
-import { issueTrackerSecretName } from "./IssueTrackerHostLive.ts";
+import {
+  decodeIssueTrackerCredential,
+  encodeIssueTrackerCredential,
+  issueTrackerSecretName,
+} from "./IssueTrackerHostLive.ts";
 import * as IssueTrackerRegistry from "./IssueTrackerRegistry.ts";
-
-const encoder = new TextEncoder();
 
 export class IssueTrackerConnections extends Context.Service<
   IssueTrackerConnections,
@@ -79,21 +85,42 @@ const make = Effect.gen(function* () {
     scopes: [],
   });
 
-  /** The tracker's view of a stored credential; a refusal is status, not a failure. */
-  const status = (api: StandaloneIssueTrackerApi, token: string) =>
-    api.probeCredential(token).pipe(
-      Effect.map((probe): IssueTrackerConnection => ({
-        ...api.standalone,
-        connected: true,
-        account: probe.account,
-        detail: null,
-        ...(probe.workspace === undefined ? {} : { workspace: probe.workspace }),
-        scopes: probe.scopes,
-      })),
+  const probeLogin = (api: StandaloneIssueTrackerApi, token: string | null) =>
+    token !== null
+      ? api.probeCredential(token)
+      : (api.probeEnvironmentLogin ??
+        Effect.fail(
+          new IssueTrackerError({
+            tracker: api.kind,
+            operation: "probeEnvironmentLogin",
+            reason: "failed",
+            detail: "This tracker does not support using the environment login.",
+          }),
+        ));
+
+  const connected = (
+    api: StandaloneIssueTrackerApi,
+    login: IssueTrackerLogin,
+    token: string | null,
+  ): IssueTrackerConnection => ({
+    ...api.standalone,
+    connected: true,
+    ...(token === null ? { usesEnvironmentLogin: true as const } : {}),
+    account: login.account,
+    detail: null,
+    ...(login.workspace === undefined ? {} : { workspace: login.workspace }),
+    scopes: login.scopes,
+  });
+
+  /** A refusal is status so the user can replace or disconnect the credential. */
+  const status = (api: StandaloneIssueTrackerApi, token: string | null) =>
+    probeLogin(api, token).pipe(
+      Effect.map((login) => connected(api, login, token)),
       Effect.catch((error) =>
         Effect.succeed<IssueTrackerConnection>({
           ...api.standalone,
           connected: true,
+          ...(token === null ? { usesEnvironmentLogin: true as const } : {}),
           account: null,
           detail: IssueService.trackerDetail(error),
           scopes: [],
@@ -107,7 +134,7 @@ const make = Effect.gen(function* () {
       Effect.flatMap((stored) =>
         Option.isNone(stored)
           ? Effect.succeed(disconnected(api))
-          : status(api, new TextDecoder().decode(stored.value)),
+          : status(api, decodeIssueTrackerCredential(stored.value)),
       ),
     );
 
@@ -137,8 +164,9 @@ const make = Effect.gen(function* () {
     "IssueTrackerConnections.connect",
   )(function* (input) {
     const api = yield* requireTracker(input.tracker);
-    if (input.token === null) return yield* disconnect(api);
-    const probe = yield* api.probeCredential(input.token).pipe(
+    if ("token" in input && input.token === null) return yield* disconnect(api);
+    const token = "token" in input ? input.token : null;
+    const login = yield* probeLogin(api, token).pipe(
       Effect.mapError(
         (error) =>
           new IssueTrackerConnectionError({
@@ -150,16 +178,9 @@ const make = Effect.gen(function* () {
       ),
     );
     yield* secrets
-      .set(issueTrackerSecretName(api.kind), encoder.encode(input.token))
+      .set(issueTrackerSecretName(api.kind), encodeIssueTrackerCredential(token))
       .pipe(Effect.mapError(secretFailure(api.kind, "The credential could not be stored.")));
-    return {
-      ...api.standalone,
-      connected: true,
-      account: probe.account,
-      detail: null,
-      ...(probe.workspace === undefined ? {} : { workspace: probe.workspace }),
-      scopes: probe.scopes,
-    };
+    return connected(api, login, token);
   });
 
   const bindProject: IssueTrackerConnections["Service"]["bindProject"] = Effect.fn(

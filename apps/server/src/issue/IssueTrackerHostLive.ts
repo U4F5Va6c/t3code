@@ -17,7 +17,19 @@ export function issueTrackerSecretName(tracker: IssueTrackerKind): string {
   return `issue-tracker-${Buffer.from(tracker, "utf8").toString("base64url")}-token`;
 }
 
+const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+// This byte cannot occur in a legacy token encoded as UTF-8.
+const environmentLoginMarker = 0xff;
+
+export function encodeIssueTrackerCredential(token: string | null): Uint8Array {
+  return token === null ? Uint8Array.of(environmentLoginMarker) : encoder.encode(token);
+}
+
+export function decodeIssueTrackerCredential(bytes: Uint8Array): string | null {
+  return bytes.length === 1 && bytes[0] === environmentLoginMarker ? null : decoder.decode(bytes);
+}
 
 const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
@@ -25,7 +37,7 @@ const make = Effect.gen(function* () {
     credentials: {
       get: (tracker) =>
         secrets.get(issueTrackerSecretName(tracker)).pipe(
-          Effect.map(Option.map((bytes) => decoder.decode(bytes))),
+          Effect.map(Option.map(decodeIssueTrackerCredential)),
           Effect.mapError(
             (cause) =>
               new IssueTrackerError({

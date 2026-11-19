@@ -35,6 +35,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 function harness(
   respond: (request: HttpClientRequest.HttpClientRequest) => Response = () => json(repository()),
+  organizationTokens: Record<string, string> = { "org-a": "token-a", "org-b": "token-b" },
 ) {
   const sent: Array<{ url: string; token: string | undefined; redirect: string | undefined }> = [];
   const signals: AbortSignal[] = [];
@@ -66,7 +67,7 @@ function harness(
         settings: {
           ...DEFAULT_SERVER_SETTINGS,
           sourceControlHosts: {
-            codeup: { organizationTokens: { "org-a": "token-a", "org-b": "token-b" } },
+            codeup: { organizationTokens },
           },
         },
       }),
@@ -85,9 +86,9 @@ function harness(
 }
 
 describe("Codeup API and driver", () => {
-  it.effect(
-    "reads a bound ProjeX work item with its own credential and verifies its project",
-    () => {
+  it.effect.each(["separate", "existing"] as const)(
+    "reads a bound ProjeX work item and verifies its project with a %s login",
+    (source) => {
       const root = "https://openapi-rdc.aliyuncs.com/oapi/v1";
       const workitem = {
         id: "internal-id",
@@ -116,12 +117,22 @@ describe("Codeup API and driver", () => {
           [{ id: "comment-1", user: { id: "author" }, content: "A comment", gmtCreate: 2000 }],
         ],
       ]);
-      const { layer, sent } = harness((request) =>
-        responses.has(request.url) ? json(responses.get(request.url)) : json(null, 404),
+      const { layer, sent } = harness(
+        (request) =>
+          request.url === `${root}/platform/user` &&
+          request.headers["x-yunxiao-token"] === "token-b"
+            ? json(null, 401)
+            : responses.has(request.url)
+              ? json(responses.get(request.url))
+              : json(null, 404),
+        { "org-b": "token-b", "org-a": "token-a" },
       );
       return Effect.gen(function* () {
         const issueTracker = yield* ProjexIssueTracker.make;
-        expect(yield* issueTracker.probeCredential("projex-token")).toEqual({
+        const login = yield* source === "existing"
+          ? issueTracker.probeEnvironmentLogin
+          : issueTracker.probeCredential("projex-token");
+        expect(login).toEqual({
           account: "Author",
           scopes: [{ key: "org-a/space-a", name: "Organization / Project" }],
         });
@@ -154,15 +165,24 @@ describe("Codeup API and driver", () => {
           .pipe(Effect.flip);
         expect(error.reason).toBe("not-found");
         expect(sent.filter((request) => request.url.endsWith("/comments"))).toHaveLength(1);
-        const codeup = yield* CodeupApi.CodeupApi;
-        yield* codeup.request({ operation: "ListOrganizations", organizationId: "org-a" });
-        expect(sent.map((request) => request.token)).toEqual([
-          ...Array<string>(7).fill("projex-token"),
-          "token-a",
-        ]);
+        if (source === "existing") {
+          expect(
+            sent.filter((request) => request.url.startsWith(path)).map((request) => request.token),
+          ).toEqual(Array<string>(5).fill("token-a"));
+          expect(yield* issueTracker.getViewer()).toBe("author");
+        } else {
+          const codeup = yield* CodeupApi.CodeupApi;
+          yield* codeup.request({ operation: "ListOrganizations", organizationId: "org-a" });
+          expect(sent.map((request) => request.token)).toEqual([
+            ...Array<string>(7).fill("projex-token"),
+            "token-a",
+          ]);
+        }
       }).pipe(
         Effect.provideService(IssueTrackerHost.IssueTrackerHost, {
-          credentials: { get: () => Effect.succeedSome("projex-token") },
+          credentials: {
+            get: () => Effect.succeedSome(source === "existing" ? null : "projex-token"),
+          },
         }),
         Effect.provide(layer),
       );
