@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as FileSystem from "effect/FileSystem";
+import * as FeatureFlags from "@t3tools/shared/FeatureFlags";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as PlatformError from "effect/PlatformError";
 import { VcsProcessSpawnError, VcsProcessExitError } from "@t3tools/contracts";
@@ -78,6 +79,7 @@ function harness(
       Layer.provideMerge(FileSystem.layerNoop({})),
       Layer.provideMerge(SourceControlRateLimit.layer),
       Layer.provideMerge(NodeCrypto.layer),
+      Layer.provideMerge(FeatureFlags.layerTest()),
       Layer.provide(Layer.succeed(HostProcess.Environment, {})),
     ),
     sent,

@@ -35,6 +35,10 @@ describe("ElectronProtocol", () => {
   it.effect("registers the isolated preview origin before loading its renderer", () =>
     Effect.sync(() => {
       assert.equal(
+        ElectronProtocol.getDesktopOrigin(false, "0.0.0-codeup.20261012.1"),
+        "t3code-codeup-preview://app",
+      );
+      assert.equal(
         ElectronProtocol.getDesktopUrl(false, "0.0.0-codeup.20261012.1"),
         "t3code-codeup-preview://app/",
       );

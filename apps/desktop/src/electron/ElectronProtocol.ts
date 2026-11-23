@@ -25,7 +25,7 @@ export function getDesktopScheme(isDevelopment: boolean, appVersion?: string): s
       : DESKTOP_PRODUCTION_SCHEME;
 }
 
-function getDesktopOrigin(isDevelopment: boolean, appVersion?: string): string {
+export function getDesktopOrigin(isDevelopment: boolean, appVersion?: string): string {
   return `${getDesktopScheme(isDevelopment, appVersion)}://${DESKTOP_HOST}`;
 }
 

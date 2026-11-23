@@ -100,6 +100,8 @@ jobs:
           apps/server/src/persistence/reconcileV2PreviewMigration.test.ts
           apps/server/src/auth/EnvironmentAuth.test.ts
           apps/server/src/auth/McpOAuth.test.ts
+          apps/server/src/issue/IssueService.test.ts
+          apps/server/src/git/linkCreatedPullRequest.test.ts
           apps/server/src/pullRequest/PullRequestService.test.ts
           apps/server/src/pullRequest/PullRequestReviewGuideService.test.ts
           apps/server/src/mcp/toolkits/pullRequests/handlers.test.ts

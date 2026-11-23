@@ -382,6 +382,10 @@ const PullRequestNativeIdentity = Schema.Struct({
   targetRepositoryId: PositiveInt,
 });
 
+/** Who can read a pull request on a host that can hide one in a public repository. */
+export const PullRequestVisibility = Schema.Literals(["public", "private"]);
+export type PullRequestVisibility = typeof PullRequestVisibility.Type;
+
 export const PullRequestListEntry = Schema.Struct({
   nativeIdentity: Schema.optional(PullRequestNativeIdentity),
   /** Overrides the host identity for providers with repository-scoped accounts. */
@@ -412,6 +416,8 @@ export const PullRequestListEntry = Schema.Struct({
   labels: Schema.Array(PullRequestLabel),
   reviewDecision: Schema.optional(PullRequestReviewDecision),
   checksState: Schema.optional(PullRequestChecksState),
+  /** Absent where the host has no private pull requests or names no visibility. */
+  visibility: Schema.optional(PullRequestVisibility),
 });
 export type PullRequestListEntry = typeof PullRequestListEntry.Type;
 
@@ -698,6 +704,8 @@ export const PullRequestDetail = Schema.Struct({
   updatedAt: IsoDateTime,
   observedAt: Schema.optional(Schema.Finite),
   mergedAt: Schema.NullOr(IsoDateTime),
+  mergeCommitSha: Schema.optional(TrimmedNonEmptyString),
+  mergedBy: Schema.optional(PullRequestActor),
   closedAt: Schema.NullOr(IsoDateTime),
   reviewers: Schema.Array(PullRequestActor),
   labels: Schema.Array(PullRequestLabel),
@@ -713,6 +721,8 @@ export const PullRequestDetail = Schema.Struct({
   /** Absent where the host has no merge queue or does not report one. */
   mergeQueueRemoval: Schema.optional(PullRequestMergeQueueRemoval),
   maintainerCanModify: Schema.optional(Schema.Boolean),
+  /** Absent where the host has no private pull requests or names no visibility. */
+  visibility: Schema.optional(PullRequestVisibility),
 });
 export type PullRequestDetail = typeof PullRequestDetail.Type;
 
@@ -871,10 +881,11 @@ export const PullRequestStackHead = Schema.Struct({
 export type PullRequestStackHead = typeof PullRequestStackHead.Type;
 
 export const PullRequestActionInput = Schema.Struct({
-  expectedHeadSha: Schema.optional(TrimmedNonEmptyString),
   /** Native stack scope; only send to environments advertising pullRequestStackActions. */
   stackNumber: Schema.optional(PositiveInt),
   expectedStackHeads: Schema.optional(Schema.Array(PullRequestStackHead)),
+  /** Merges refuse when the head commit is no longer this one. */
+  expectedHeadSha: Schema.optional(TrimmedNonEmptyString),
   ...PullRequestRef.fields,
   action: PullRequestAction,
   mergeMethod: Schema.optional(PullRequestMergeMethod),
