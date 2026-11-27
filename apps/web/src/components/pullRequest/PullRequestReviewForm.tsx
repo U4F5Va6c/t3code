@@ -72,12 +72,14 @@ export function PullRequestReviewForm({
   pending,
   onPendingChange,
   onSubmitted,
+  onRefused,
 }: {
   environmentId: EnvironmentId;
   /** False while the form stays mounted but hidden; dictation is cancelled then. */
   active: boolean;
   reference: PullRequestRef;
-  headSha?: string | undefined;
+  /** The head on screen, which the review is pinned to. */
+  headSha: string | undefined;
   persistedDrafts?: boolean;
   viewer?: string | undefined;
   completionScope: PullRequestCompletionScope | null;
@@ -88,6 +90,7 @@ export function PullRequestReviewForm({
   pending: boolean;
   onPendingChange: (pending: boolean) => void;
   onSubmitted: () => void;
+  onRefused: () => void;
 }) {
   const gt = useGT();
   const resolve = useMessages();
@@ -100,11 +103,8 @@ export function PullRequestReviewForm({
     viewer,
     headSha,
   );
-  const headChanged = hasUnreviewedDraftHead(
-    reviewedHeadSha,
-    headSha,
-    persistedDrafts ? reviewDrafts.revision : undefined,
-  );
+  const headChanged =
+    persistedDrafts && hasUnreviewedDraftHead(reviewedHeadSha, headSha, reviewDrafts.revision);
   const comments = reviewDrafts.comments;
   const staleDrafts = comments.some((comment) => comment.stale);
   const reviewKey = pullRequestReviewKey(reference);
@@ -140,19 +140,19 @@ export function PullRequestReviewForm({
       : (usePullRequestReviewStore.getState().drafts[reviewKey] ?? []);
     if (
       pending ||
-      (headChanged && verdict.value !== "comment") ||
       (persistedDrafts &&
         (headChanged || staleDrafts || !reviewDrafts.loaded || !reviewDrafts.canWrite)) ||
       !canSubmit(verdict.value, text, submittedComments.length)
     )
       return;
     const submittedBody = text;
+    const expectedHeadSha = persistedDrafts ? reviewedHeadSha : headSha;
     onPendingChange(true);
     const result = await submitReview({
       environmentId,
       input: {
         ...reference,
-        ...(reviewedHeadSha ? { expectedHeadSha: reviewedHeadSha } : {}),
+        ...(expectedHeadSha === undefined ? {} : { expectedHeadSha }),
         verdict: verdict.value,
         body: submittedBody,
         comments: persistedDrafts ? [] : submittedComments,
@@ -174,6 +174,7 @@ export function PullRequestReviewForm({
           m(msg("The host refused the review. Your draft is still here to try again.")),
         ),
       });
+      onRefused();
       return;
     }
     // More remarks may have been added while the host was accepting this snapshot. Leave those,
@@ -247,7 +248,7 @@ export function PullRequestReviewForm({
           <Button
             size="xs"
             variant="outline"
-            disabled={pending || (persistedDrafts && headSha !== reviewDrafts.revision?.headSha)}
+            disabled={pending || headSha !== reviewDrafts.revision?.headSha}
             onClick={() => setReviewedHeadSha(headSha)}
           >
             <T>I reviewed the latest changes</T>
@@ -311,9 +312,7 @@ export function PullRequestReviewForm({
             (persistedDrafts &&
               (headChanged || staleDrafts || !reviewDrafts.loaded || !reviewDrafts.canWrite)) ||
             selectedVerdict === undefined ||
-            (!canSubmit(selectedVerdict.value, body, comments.length) &&
-              !speech.blocksSubmission) ||
-            (headChanged && selectedVerdict.value !== "comment")
+            (!canSubmit(selectedVerdict.value, body, comments.length) && !speech.blocksSubmission)
           }
           onClick={() => {
             if (selectedVerdict !== undefined)
