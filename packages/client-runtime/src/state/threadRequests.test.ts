@@ -922,8 +922,8 @@ it("bounds the parts of a megabyte of approval text and still shows what it ends
   }
 });
 
-it("splits a megabyte of approval text the same way as a short one", () => {
-  const size = 1 << 20;
+it("splits long approval text the same way as a short one", () => {
+  const size = APPROVAL_TEXT_LIMIT.length;
   const fill = (unit: string) => unit.repeat(size / unit.length);
   const count = (text: string) => {
     const { parts } = approvalTextParts(text, {
